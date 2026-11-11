@@ -1,0 +1,17 @@
+# Python bytecode and install metadata (created by bench / pip install -e)
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Frontend dependencies and bench build output
+node_modules/
+construction_management/public/dist/
+
+# Local environment values
+.env
+
+# Editor and Windows files
+.vscode/
+*.swp
+Thumbs.db
+desktop.ini
