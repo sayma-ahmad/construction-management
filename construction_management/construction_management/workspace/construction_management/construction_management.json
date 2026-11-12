@@ -12,7 +12,7 @@
  "is_hidden": 0,
  "label": "Construction Management",
  "links": [],
- "modified": "2026-11-11 17:00:00.000000",
+ "modified": "2026-11-12 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Construction Management",
  "name": "Construction Management",
@@ -29,8 +29,8 @@
    "color": "Grey",
    "icon": "dashboard",
    "label": "Dashboard",
-   "link_to": "Project",
-   "type": "Dashboard"
+   "link_to": "construction-dashboard",
+   "type": "Page"
   },
   {
    "color": "Grey",

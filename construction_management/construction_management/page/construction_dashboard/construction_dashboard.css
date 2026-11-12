@@ -1,0 +1,203 @@
+.cm-dashboard {
+	display: flex;
+	flex-direction: column;
+	gap: var(--margin-lg);
+	padding: var(--padding-md) 0 var(--padding-xl);
+}
+
+.cm-kpi-grid {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: var(--margin-lg);
+}
+
+.cm-row {
+	display: grid;
+	grid-template-columns: repeat(12, minmax(0, 1fr));
+	gap: var(--margin-lg);
+}
+
+.cm-span-4 { grid-column: span 4; }
+.cm-span-5 { grid-column: span 5; }
+.cm-span-7 { grid-column: span 7; }
+.cm-span-8 { grid-column: span 8; }
+.cm-span-12 { grid-column: span 12; }
+
+.cm-card {
+	background: var(--card-bg);
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-lg);
+	box-shadow: var(--card-shadow);
+	padding: var(--padding-lg);
+	min-width: 0;
+}
+
+.cm-card-header {
+	margin-bottom: var(--margin-md);
+}
+
+.cm-card-title {
+	font-size: var(--text-lg);
+	font-weight: var(--weight-semibold);
+	color: var(--heading-color);
+}
+
+.cm-card-subtitle {
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+}
+
+/* KPI cards */
+.cm-kpi {
+	display: flex;
+	align-items: center;
+	gap: var(--margin-md);
+	border-left-width: 4px;
+}
+
+.cm-kpi-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: 44px;
+	height: 44px;
+	border-radius: var(--border-radius-full);
+}
+
+.cm-kpi-label {
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+}
+
+.cm-kpi-value {
+	font-size: 1.75rem;
+	font-weight: var(--weight-bold);
+	line-height: 1.2;
+	color: var(--heading-color);
+}
+
+.cm-kpi-note {
+	font-size: var(--text-xs);
+	color: var(--text-light);
+}
+
+.cm-kpi { border-left-color: var(--gray-800); }
+.cm-kpi .cm-kpi-icon { background: var(--gray-100); --icon-stroke: var(--gray-800); }
+
+/* Project progress table */
+.cm-table-wrapper {
+	overflow-x: auto;
+}
+
+.cm-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--text-sm);
+}
+
+.cm-table th {
+	color: var(--text-muted);
+	font-weight: var(--weight-medium);
+	text-align: left;
+	padding: var(--padding-sm);
+	border-bottom: 1px solid var(--border-color);
+}
+
+.cm-table td {
+	padding: var(--padding-sm);
+	border-bottom: 1px solid var(--border-color);
+	vertical-align: middle;
+}
+
+.cm-table tr:last-child td {
+	border-bottom: none;
+}
+
+.cm-project-name {
+	font-weight: var(--weight-medium);
+	color: var(--text-color);
+}
+
+.cm-project-site {
+	font-size: var(--text-xs);
+	color: var(--text-muted);
+}
+
+.cm-nowrap {
+	white-space: nowrap;
+}
+
+.cm-progress-cell {
+	display: flex;
+	align-items: center;
+	gap: var(--margin-sm);
+	min-width: 140px;
+}
+
+.cm-progress {
+	flex: 1;
+	height: 8px;
+	background: var(--gray-200);
+	border-radius: var(--border-radius-full);
+	overflow: hidden;
+}
+
+.cm-progress-bar {
+	height: 100%;
+	border-radius: var(--border-radius-full);
+	background: var(--blue-700);
+}
+
+.cm-progress-value {
+	width: 36px;
+	text-align: right;
+	color: var(--text-muted);
+}
+
+/* Recent activity */
+.cm-activity {
+	display: flex;
+	align-items: center;
+	gap: var(--margin-sm);
+	padding: var(--padding-sm) 0;
+	border-bottom: 1px solid var(--border-color);
+	font-size: var(--text-sm);
+}
+
+.cm-activity:last-child {
+	border-bottom: none;
+}
+
+.cm-activity-text {
+	flex: 1;
+	color: var(--text-color);
+}
+
+.cm-activity-time {
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+
+@media (max-width: 991px) {
+	.cm-kpi-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.cm-span-4,
+	.cm-span-5,
+	.cm-span-7,
+	.cm-span-8 {
+		grid-column: span 12;
+	}
+}
+
+@media (max-width: 575px) {
+	.cm-kpi-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.cm-activity {
+		flex-wrap: wrap;
+	}
+}
