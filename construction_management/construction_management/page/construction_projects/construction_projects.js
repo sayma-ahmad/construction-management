@@ -1,118 +1,7 @@
-// Sample data only. Real projects will be loaded from the Project DocType in a later story.
-const SAMPLE_PROJECTS = [
-	{
-		name: "Riverside Apartments",
-		code: "PRJ-001",
-		client: "Riverside Housing Ltd",
-		location: "Pune",
-		status: "In Progress",
-		start: "2025-08-01",
-		end: "2027-02-15",
-		manager: "Anil Mehta",
-		description: "Two residential towers with 180 apartments and basement parking.",
-	},
-	{
-		name: "Metro Office Tower",
-		code: "PRJ-002",
-		client: "Metro Realty Group",
-		location: "Mumbai",
-		status: "In Progress",
-		start: "2025-11-10",
-		end: "2027-06-30",
-		manager: "Priya Nair",
-		description: "22-floor commercial office tower with retail on the ground floor.",
-	},
-	{
-		name: "Green Valley Villas",
-		code: "PRJ-003",
-		client: "Green Valley Estates",
-		location: "Bengaluru",
-		status: "On Hold",
-		start: "2025-06-15",
-		end: "2027-01-20",
-		manager: "Rahul Verma",
-		description: "Gated community of 40 independent villas. Paused for permit revision.",
-	},
-	{
-		name: "City Mall Renovation",
-		code: "PRJ-004",
-		client: "City Centre Malls",
-		location: "Delhi",
-		status: "In Progress",
-		start: "2026-01-05",
-		end: "2026-12-10",
-		manager: "Sneha Kapoor",
-		description: "Facade upgrade, new food court and HVAC replacement.",
-	},
-	{
-		name: "Harbor Bridge Repair",
-		code: "PRJ-005",
-		client: "State Public Works Dept",
-		location: "Chennai",
-		status: "In Progress",
-		start: "2026-03-01",
-		end: "2027-03-05",
-		manager: "Karthik Iyer",
-		description: "Structural repair and resurfacing of the east harbor bridge.",
-	},
-	{
-		name: "Sunrise School Block",
-		code: "PRJ-006",
-		client: "Sunrise Education Trust",
-		location: "Pune",
-		status: "Completed",
-		start: "2025-02-01",
-		end: "2026-06-30",
-		manager: "Anil Mehta",
-		description: "Three-storey academic block with labs and an auditorium.",
-	},
-	{
-		name: "Lakeview Hospital Wing",
-		code: "PRJ-007",
-		client: "Lakeview Healthcare",
-		location: "Hyderabad",
-		status: "Planning",
-		start: "2027-01-15",
-		end: "2028-04-30",
-		manager: "Fatima Shaikh",
-		description: "New 120-bed wing with operating theatres and ICU.",
-	},
-	{
-		name: "Tech Park Phase 2",
-		code: "PRJ-008",
-		client: "Nexus Tech Parks",
-		location: "Bengaluru",
-		status: "Planning",
-		start: "2027-03-01",
-		end: "2028-09-30",
-		manager: "Rahul Verma",
-		description: "Two IT office blocks and a multi-level car park.",
-	},
-	{
-		name: "Highway Toll Plaza",
-		code: "PRJ-009",
-		client: "National Highways Authority",
-		location: "Ahmedabad",
-		status: "Completed",
-		start: "2025-04-10",
-		end: "2026-05-20",
-		manager: "Vikram Desai",
-		description: "Eight-lane toll plaza with control room and staff quarters.",
-	},
-	{
-		name: "Coastal Resort",
-		code: "PRJ-010",
-		client: "Blue Bay Hospitality",
-		location: "Goa",
-		status: "On Hold",
-		start: "2026-02-01",
-		end: "2027-08-31",
-		manager: "Priya Nair",
-		description: "60-room beach resort with spa and conference centre.",
-	},
+const CM_SHARED_ASSETS = [
+	"/assets/construction_management/js/sample_projects.js",
+	"/assets/construction_management/css/construction_management.css",
 ];
-
-const PROJECT_STATUSES = ["Planning", "In Progress", "On Hold", "Completed"];
 
 frappe.pages["construction-projects"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
@@ -124,7 +13,9 @@ frappe.pages["construction-projects"].on_page_load = function (wrapper) {
 	page.set_primary_action(__("New Project"), show_create_placeholder, "add");
 	page.set_secondary_action(__("Workspace"), () => frappe.set_route("construction-management"));
 
-	new ProjectList(page, SAMPLE_PROJECTS);
+	frappe.require(CM_SHARED_ASSETS, () => {
+		new ProjectList(page, construction_management.SAMPLE_PROJECTS);
+	});
 };
 
 class ProjectList {
@@ -149,7 +40,7 @@ class ProjectList {
 			fieldname: "status",
 			label: __("Status"),
 			fieldtype: "Select",
-			options: ["", ...PROJECT_STATUSES],
+			options: ["", ...construction_management.PROJECT_STATUSES],
 			change: () => this.render(),
 		});
 
@@ -193,8 +84,7 @@ class ProjectList {
 		`).appendTo(this.page.main);
 
 		this.$wrapper.on("click", "tbody tr[data-code]", (e) => {
-			const project = this.projects.find((p) => p.code === $(e.currentTarget).attr("data-code"));
-			show_project_details(project);
+			frappe.set_route("construction-project-details", $(e.currentTarget).attr("data-code"));
 		});
 
 		this.$wrapper.find(".cm-projects-clear").on("click", () => {
@@ -241,54 +131,12 @@ function project_row(project) {
 			<td class="cm-projects-muted">${esc(project.code)}</td>
 			<td>${esc(project.client)}</td>
 			<td>${esc(project.location)}</td>
-			<td>${status_pill(project.status)}</td>
+			<td>${construction_management.status_pill(project.status)}</td>
 			<td class="cm-projects-nowrap">${frappe.datetime.str_to_user(project.start)}</td>
 			<td class="cm-projects-nowrap">${frappe.datetime.str_to_user(project.end)}</td>
 			<td class="cm-projects-open">${frappe.utils.icon("right", "sm")}</td>
 		</tr>
 	`;
-}
-
-function status_pill(status) {
-	const css_class = status.toLowerCase().replace(/\s+/g, "-");
-	return `<span class="cm-status cm-status-${css_class}">${__(status)}</span>`;
-}
-
-function show_project_details(project) {
-	const esc = frappe.utils.escape_html;
-	const fields = [
-		[__("Project Code"), esc(project.code)],
-		[__("Client"), esc(project.client)],
-		[__("Location"), esc(project.location)],
-		[__("Status"), status_pill(project.status)],
-		[__("Project Manager"), esc(project.manager)],
-		[__("Start Date"), frappe.datetime.str_to_user(project.start)],
-		[__("End Date"), frappe.datetime.str_to_user(project.end)],
-	];
-
-	const dialog = new frappe.ui.Dialog({
-		title: project.name,
-		fields: [{ fieldtype: "HTML", fieldname: "details" }],
-	});
-
-	dialog.fields_dict.details.$wrapper.html(`
-		<div class="cm-project-details">
-			${fields
-				.map(
-					([label, value]) => `
-				<div class="cm-project-detail">
-					<div class="cm-project-detail-label">${label}</div>
-					<div class="cm-project-detail-value">${value}</div>
-				</div>`
-				)
-				.join("")}
-			<div class="cm-project-detail cm-project-detail-full">
-				<div class="cm-project-detail-label">${__("Description")}</div>
-				<div class="cm-project-detail-value">${esc(project.description)}</div>
-			</div>
-		</div>
-	`);
-	dialog.show();
 }
 
 function show_create_placeholder() {
