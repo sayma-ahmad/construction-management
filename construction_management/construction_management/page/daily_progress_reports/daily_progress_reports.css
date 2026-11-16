@@ -1,0 +1,123 @@
+.cm-dpr-page {
+	padding: var(--padding-md) 0 var(--padding-xl);
+}
+
+.cm-dpr-card {
+	background: var(--card-bg);
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-lg);
+	box-shadow: var(--card-shadow);
+	min-width: 0;
+}
+
+.cm-dpr-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--margin-sm);
+	padding: var(--padding-md) var(--padding-lg);
+	border-bottom: 1px solid var(--border-color);
+}
+
+.cm-dpr-count {
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+}
+
+.cm-dpr-table-wrapper {
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+}
+
+.cm-dpr-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--text-sm);
+}
+
+.cm-dpr-table th {
+	color: var(--text-muted);
+	font-weight: var(--weight-medium);
+	text-align: left;
+	white-space: nowrap;
+	padding: var(--padding-sm) var(--padding-lg);
+	border-bottom: 1px solid var(--border-color);
+	background: var(--subtle-fg);
+}
+
+.cm-dpr-table td {
+	padding: var(--padding-md) var(--padding-lg);
+	border-bottom: 1px solid var(--border-color);
+	color: var(--text-color);
+	vertical-align: middle;
+}
+
+.cm-dpr-table tbody tr:last-child td {
+	border-bottom: none;
+}
+
+.cm-dpr-table tbody tr[data-name] {
+	cursor: pointer;
+}
+
+.cm-dpr-table tbody tr[data-name]:hover {
+	background: var(--highlight-color);
+}
+
+.cm-dpr-id {
+	font-weight: var(--weight-medium);
+	color: var(--heading-color);
+	white-space: nowrap;
+}
+
+.cm-dpr-nowrap {
+	white-space: nowrap;
+}
+
+.cm-dpr-open {
+	width: 1%;
+	--icon-stroke: var(--gray-500);
+}
+
+.cm-dpr-state {
+	text-align: center;
+	color: var(--text-muted);
+	padding: var(--padding-xl) var(--padding-lg) !important;
+}
+
+.cm-dpr-state-error {
+	color: var(--red-600);
+}
+
+.cm-dpr-state-actions {
+	margin-top: var(--margin-sm);
+}
+
+.cm-dpr-pagination {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--margin-sm);
+	padding: var(--padding-sm) var(--padding-lg);
+	border-top: 1px solid var(--border-color);
+}
+
+.cm-dpr-pagination-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--margin-xs);
+}
+
+@media (max-width: 768px) {
+	.cm-dpr-table th,
+	.cm-dpr-table td {
+		padding: var(--padding-sm) var(--padding-md);
+	}
+}
+
+@media (max-width: 575px) {
+	.cm-dpr-toolbar,
+	.cm-dpr-pagination {
+		flex-wrap: wrap;
+	}
+}

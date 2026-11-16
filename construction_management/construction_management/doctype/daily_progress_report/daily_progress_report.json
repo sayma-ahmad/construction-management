@@ -1,0 +1,298 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-11-16 11:22:38.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "project",
+  "project_name",
+  "column_break_header",
+  "report_date",
+  "site_engineer",
+  "weather",
+  "shift",
+  "progress_section",
+  "overall_progress",
+  "work_completed",
+  "issues_and_delays",
+  "safety_notes",
+  "remarks",
+  "tasks_section",
+  "task_progress",
+  "manpower_section",
+  "manpower",
+  "total_workers",
+  "machinery_section",
+  "machinery",
+  "total_machinery",
+  "review_section",
+  "review_status",
+  "reviewed_by",
+  "column_break_review",
+  "reviewed_on",
+  "review_remarks",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "default": "DPR-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "no_copy": 1,
+   "options": "DPR-.YYYY.-.#####",
+   "print_hide": 1,
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Project",
+   "options": "Project",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "project.project_name",
+   "fieldname": "project_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Project Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_header",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Today",
+   "fieldname": "report_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Report Date",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "__user",
+   "fieldname": "site_engineer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Site Engineer",
+   "options": "User"
+  },
+  {
+   "fieldname": "weather",
+   "fieldtype": "Select",
+   "label": "Weather",
+   "options": "\nSunny\nPartly Cloudy\nCloudy\nRainy\nStormy\nWindy\nHot\nFoggy"
+  },
+  {
+   "default": "Day",
+   "fieldname": "shift",
+   "fieldtype": "Select",
+   "label": "Shift",
+   "options": "\nDay\nNight\nGeneral"
+  },
+  {
+   "fieldname": "progress_section",
+   "fieldtype": "Section Break",
+   "label": "Progress Summary"
+  },
+  {
+   "description": "Manually entered overall project progress percentage as of this report.",
+   "fieldname": "overall_progress",
+   "fieldtype": "Percent",
+   "in_list_view": 1,
+   "label": "Overall Progress (%)"
+  },
+  {
+   "fieldname": "work_completed",
+   "fieldtype": "Text",
+   "label": "Work Completed",
+   "reqd": 1
+  },
+  {
+   "fieldname": "issues_and_delays",
+   "fieldtype": "Small Text",
+   "label": "Issues & Delays"
+  },
+  {
+   "fieldname": "safety_notes",
+   "fieldtype": "Small Text",
+   "label": "Safety Notes"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "tasks_section",
+   "fieldtype": "Section Break",
+   "label": "Task Progress"
+  },
+  {
+   "fieldname": "task_progress",
+   "fieldtype": "Table",
+   "label": "Task Progress",
+   "options": "DPR Task Progress"
+  },
+  {
+   "fieldname": "manpower_section",
+   "fieldtype": "Section Break",
+   "label": "Manpower"
+  },
+  {
+   "fieldname": "manpower",
+   "fieldtype": "Table",
+   "label": "Manpower",
+   "options": "DPR Manpower"
+  },
+  {
+   "default": "0",
+   "fieldname": "total_workers",
+   "fieldtype": "Int",
+   "label": "Total Workers",
+   "read_only": 1
+  },
+  {
+   "fieldname": "machinery_section",
+   "fieldtype": "Section Break",
+   "label": "Machinery & Equipment"
+  },
+  {
+   "fieldname": "machinery",
+   "fieldtype": "Table",
+   "label": "Machinery",
+   "options": "DPR Machinery"
+  },
+  {
+   "default": "0",
+   "fieldname": "total_machinery",
+   "fieldtype": "Int",
+   "label": "Total Machinery Units",
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_section",
+   "fieldtype": "Section Break",
+   "label": "Review"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Draft",
+   "fieldname": "review_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Review Status",
+   "options": "Draft\nPending Review\nApproved\nRevision Requested\nCancelled",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_review",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "reviewed_on",
+   "fieldtype": "Datetime",
+   "label": "Reviewed On",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "review_remarks",
+   "fieldtype": "Small Text",
+   "label": "Review Remarks"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Daily Progress Report",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-11-16 11:22:38.000000",
+ "modified_by": "Administrator",
+ "module": "Construction Management",
+ "name": "Daily Progress Report",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Projects User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Projects Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "project,report_date,site_engineer",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "project",
+ "track_changes": 1
+}
