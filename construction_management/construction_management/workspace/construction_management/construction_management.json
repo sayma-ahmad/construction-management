@@ -1,6 +1,6 @@
 {
  "charts": [],
- "content": "[{\"id\": \"cm-header-controls\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Controls</b></span>\", \"col\": 12}}, {\"id\": \"cm-controls-0\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Dashboard\", \"col\": 3}}, {\"id\": \"cm-controls-1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Projects\", \"col\": 3}}, {\"id\": \"cm-controls-2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tasks\", \"col\": 3}}, {\"id\": \"cm-controls-3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Daily Progress Reports\", \"col\": 3}}, {\"id\": \"cm-controls-4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Issues\", \"col\": 3}}, {\"id\": \"cm-spacer-1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"cm-header-operations\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Operations</b></span>\", \"col\": 12}}, {\"id\": \"cm-operations-0\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Inventory\", \"col\": 3}}, {\"id\": \"cm-operations-1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Materials\", \"col\": 3}}, {\"id\": \"cm-operations-2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Vendors\", \"col\": 3}}, {\"id\": \"cm-operations-3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Material Requests\", \"col\": 3}}, {\"id\": \"cm-operations-4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Purchase Orders\", \"col\": 3}}, {\"id\": \"cm-operations-5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"GRN\", \"col\": 3}}, {\"id\": \"cm-operations-6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Stock Transfers\", \"col\": 3}}, {\"id\": \"cm-operations-7\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Work Orders\", \"col\": 3}}]",
+ "content": "[{\"id\": \"cm-header-controls\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Controls</b></span>\", \"col\": 12}}, {\"id\": \"cm-controls-0\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Dashboard\", \"col\": 3}}, {\"id\": \"cm-controls-1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Projects\", \"col\": 3}}, {\"id\": \"cm-controls-2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Tasks\", \"col\": 3}}, {\"id\": \"cm-controls-phases\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Phases\", \"col\": 3}}, {\"id\": \"cm-controls-3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Daily Progress Reports\", \"col\": 3}}, {\"id\": \"cm-controls-4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Issues\", \"col\": 3}}, {\"id\": \"cm-spacer-1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"cm-header-operations\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Operations</b></span>\", \"col\": 12}}, {\"id\": \"cm-operations-0\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Inventory\", \"col\": 3}}, {\"id\": \"cm-operations-1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Materials\", \"col\": 3}}, {\"id\": \"cm-operations-2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Vendors\", \"col\": 3}}, {\"id\": \"cm-operations-3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Material Requests\", \"col\": 3}}, {\"id\": \"cm-operations-4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Purchase Orders\", \"col\": 3}}, {\"id\": \"cm-operations-5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"GRN\", \"col\": 3}}, {\"id\": \"cm-operations-6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Stock Transfers\", \"col\": 3}}, {\"id\": \"cm-operations-7\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Work Orders\", \"col\": 3}}]",
  "creation": "2026-11-11 17:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -12,7 +12,7 @@
  "is_hidden": 0,
  "label": "Construction Management",
  "links": [],
- "modified": "2026-11-16 10:00:00.000000",
+ "modified": "2026-11-16 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Construction Management",
  "name": "Construction Management",
@@ -44,6 +44,13 @@
    "icon": "list-alt",
    "label": "Tasks",
    "link_to": "construction-tasks",
+   "type": "Page"
+  },
+  {
+   "color": "Grey",
+   "icon": "milestone",
+   "label": "Phases",
+   "link_to": "construction-phases",
    "type": "Page"
   },
   {

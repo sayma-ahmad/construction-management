@@ -1,6 +1,7 @@
 const CM_PROJECT_DETAIL_ASSETS = [
 	"/assets/construction_management/js/sample_projects.js",
 	"/assets/construction_management/js/project_tasks.js",
+	"/assets/construction_management/js/project_phases.js",
 	"/assets/construction_management/css/construction_management.css",
 ];
 
@@ -42,8 +43,10 @@ frappe.pages["construction-project-details"].on_page_load = function (wrapper) {
 	wrapper.project_details = new ProjectDetails(page);
 };
 
+// Route: /app/construction-project-details/<project code>[/<tab>]
 frappe.pages["construction-project-details"].on_page_show = function (wrapper) {
-	wrapper.project_details.show(frappe.get_route()[1]);
+	const route = frappe.get_route();
+	wrapper.project_details.show(route[1], route[2]);
 };
 
 class ProjectDetails {
@@ -54,7 +57,7 @@ class ProjectDetails {
 		this.$wrapper.on("click", ".cm-pd-tab", (e) => this.set_tab($(e.currentTarget).attr("data-tab")));
 	}
 
-	show(code) {
+	show(code, tab) {
 		this.ready.then(() => {
 			const project = construction_management.SAMPLE_PROJECTS.find((p) => p.code === code);
 			if (!project) {
@@ -64,7 +67,7 @@ class ProjectDetails {
 			this.project = project;
 			this.page.set_title(project.name);
 			this.render();
-			this.set_tab("overview");
+			this.set_tab(CM_PROJECT_TABS.some((t) => t.key === tab) ? tab : "overview");
 		});
 	}
 
@@ -98,12 +101,31 @@ class ProjectDetails {
 
 			<div class="cm-pd-panel" data-panel="overview">${this.overview_panel()}</div>
 			<div class="cm-pd-panel" data-panel="tasks"></div>
-			<div class="cm-pd-panel" data-panel="phases">${this.phases_panel()}</div>
+			<div class="cm-pd-panel" data-panel="phases"></div>
 			${Object.keys(CM_PROJECT_PLACEHOLDERS)
 				.map((key) => `<div class="cm-pd-panel" data-panel="${key}">${this.placeholder_panel(key)}</div>`)
 				.join("")}
 		`);
 		this.render_tasks();
+		this.render_phases();
+	}
+
+	render_phases() {
+		const $panel = this.$wrapper.find('[data-panel="phases"]');
+		$panel.html(`
+			<div class="cm-pd-tasks-header">
+				<span class="cm-pd-subtitle">${__("Phases for {0}", [frappe.utils.escape_html(this.project.name)])}</span>
+				<button class="btn btn-xs btn-default cm-pd-all-phases">${__("Open in Project Phases")}</button>
+			</div>
+		`);
+		$panel.find(".cm-pd-all-phases").on("click", () => frappe.set_route("construction-phases", this.project.code));
+
+		new construction_management.PhaseList({
+			parent: $panel,
+			phases: construction_management.get_project_phases(this.project),
+			show_project: false,
+			show_create: true,
+		});
 	}
 
 	render_tasks() {
@@ -163,7 +185,9 @@ class ProjectDetails {
 
 		const total_days = Math.max(frappe.datetime.get_diff(p.end, p.start), 1);
 		const elapsed_days = Math.min(Math.max(frappe.datetime.get_diff(frappe.datetime.get_today(), p.start), 0), total_days);
-		const current_phase = this.get_phases().find((phase) => phase.percent < 100);
+		const current_phase = construction_management
+			.get_project_phases(p)
+			.find((phase) => phase.progress < 100);
 
 		return `
 			<div class="cm-pd-overview">
@@ -209,32 +233,6 @@ class ProjectDetails {
 		`;
 	}
 
-	phases_panel() {
-		const rows = this.get_phases()
-			.map(
-				(phase, index) => `
-				<div class="cm-pd-phase">
-					<div class="cm-pd-phase-index">${index + 1}</div>
-					<div class="cm-pd-phase-body">
-						<div class="cm-pd-phase-title">
-							<span>${__(phase.name)}</span>
-							${construction_management.status_pill(phase.status)}
-						</div>
-						${this.progress_bar(phase.percent)}
-					</div>
-					<div class="cm-pd-phase-percent">${phase.percent}%</div>
-				</div>`
-			)
-			.join("");
-
-		return `
-			<div class="cm-pd-card">
-				<div class="cm-pd-card-title">${__("Phases")}</div>
-				${rows}
-			</div>
-		`;
-	}
-
 	placeholder_panel(key) {
 		const placeholder = CM_PROJECT_PLACEHOLDERS[key];
 		return `
@@ -244,19 +242,6 @@ class ProjectDetails {
 				<div class="cm-pd-empty-text">${__(placeholder.text)}</div>
 			</div>
 		`;
-	}
-
-	// Splits overall progress evenly across the standard construction phases.
-	get_phases() {
-		const phases = construction_management.PROJECT_PHASES;
-		const share = 100 / phases.length;
-
-		return phases.map((name, index) => {
-			const done = (this.project.progress - index * share) / share;
-			const percent = Math.round(Math.min(Math.max(done, 0), 1) * 100);
-			const status = percent >= 100 ? "Completed" : percent > 0 ? "In Progress" : "Not Started";
-			return { name, percent, status };
-		});
 	}
 
 	stat_card(label, value, note) {
