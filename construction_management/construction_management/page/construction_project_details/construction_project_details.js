@@ -14,6 +14,9 @@ const CM_PROJECT_TABS = [
 	{ key: "materials", label: "Materials" },
 ];
 
+const CM_PROJECT_DPRS_METHOD =
+	"construction_management.construction_management.doctype.daily_progress_report.daily_progress_report.get_project_dprs";
+
 const CM_PROJECT_PLACEHOLDERS = {
 	dpr: {
 		icon: "today",
@@ -95,13 +98,14 @@ class ProjectDetails {
 
 			<div class="cm-pd-tabs" role="tablist">
 				${CM_PROJECT_TABS.map(
-					(tab) => `<button class="cm-pd-tab" role="tab" data-tab="${tab.key}">${__(tab.label)}</button>`
-				).join("")}
+			(tab) => `<button class="cm-pd-tab" role="tab" data-tab="${tab.key}">${__(tab.label)}</button>`
+		).join("")}
 			</div>
 
 			<div class="cm-pd-panel" data-panel="overview">${this.overview_panel()}</div>
 			<div class="cm-pd-panel" data-panel="tasks"></div>
-			<div class="cm-pd-panel" data-panel="phases"></div>
+			<div class="cm-pd-panel" data-panel="phases">${this.phases_panel()}</div>
+			<div class="cm-pd-panel" data-panel="dpr">${this.dpr_loading_panel()}</div>
 			${Object.keys(CM_PROJECT_PLACEHOLDERS)
 				.map((key) => `<div class="cm-pd-panel" data-panel="${key}">${this.placeholder_panel(key)}</div>`)
 				.join("")}
@@ -195,14 +199,14 @@ class ProjectDetails {
 					<div class="cm-pd-card-title">${__("Project Information")}</div>
 					<div class="cm-pd-fields">
 						${fields
-							.map(
-								([label, value]) => `
+				.map(
+					([label, value]) => `
 							<div>
 								<div class="cm-pd-field-label">${label}</div>
 								<div class="cm-pd-field-value">${value}</div>
 							</div>`
-							)
-							.join("")}
+				)
+				.join("")}
 					</div>
 					<div class="cm-pd-field-label">${__("Description")}</div>
 					<div class="cm-pd-field-value">${esc(p.description)}</div>
@@ -242,6 +246,146 @@ class ProjectDetails {
 				<div class="cm-pd-empty-text">${__(placeholder.text)}</div>
 			</div>
 		`;
+	}
+
+	dpr_loading_panel() {
+		return `
+			<div class="cm-pd-card cm-pd-empty">
+				<div class="cm-pd-empty-title">${__("Daily Progress Reports")}</div>
+				<div class="cm-pd-empty-text">${__("Loading Daily Progress Reports...")}</div>
+			</div>
+		`;
+	}
+
+	load_dprs() {
+		const current_code = this.project?.code;
+		const $panel = this.$wrapper.find('.cm-pd-panel[data-panel="dpr"]');
+
+		frappe.call({
+			method: CM_PROJECT_DPRS_METHOD,
+			args: {
+				project_name: this.project.name,
+				project_code: this.project.code,
+			},
+			callback: (r) => {
+				if (this.project?.code !== current_code) {
+					return;
+				}
+				const data = r.message || {};
+				this.render_dpr_panel($panel, data.mapped_project, data.dprs || []);
+			},
+			error: () => {
+				if (this.project?.code !== current_code) {
+					return;
+				}
+				$panel.html(`
+					<div class="cm-pd-card cm-pd-empty">
+						<div class="cm-pd-empty-title">${__("Unable to load Daily Progress Reports")}</div>
+						<div class="cm-pd-empty-text">${__("Please try again or open the Daily Progress Reports page.")}</div>
+						<button class="btn btn-sm btn-default cm-pd-open-dprs">${__("Open Daily Progress Reports")}</button>
+					</div>
+				`);
+				$panel
+					.find(".cm-pd-open-dprs")
+					.on("click", () => frappe.set_route("daily-progress-reports"));
+			},
+		});
+	}
+
+	render_dpr_panel($panel, mapped_project, dprs) {
+		const esc = frappe.utils.escape_html;
+
+		if (!mapped_project) {
+			$panel.html(`
+				<div class="cm-pd-card cm-pd-empty">
+					<div class="cm-pd-empty-icon">${frappe.utils.icon("today", "lg")}</div>
+					<div class="cm-pd-empty-title">${__("No Linked ERPNext Project Found")}</div>
+					<div class="cm-pd-empty-text">
+						${__(
+				'Project Details currently uses sample project data ("{0}"). No matching ERPNext Project record was found, so unrelated Daily Progress Reports are not displayed.',
+				[esc(this.project.name)]
+			)}
+					</div>
+					<button class="btn btn-sm btn-default cm-pd-open-dprs">${__("Open Daily Progress Reports")}</button>
+				</div>
+			`);
+			$panel
+				.find(".cm-pd-open-dprs")
+				.on("click", () => frappe.set_route("daily-progress-reports"));
+			return;
+		}
+
+		const rows_html = dprs.length
+			? dprs
+				.map((row) => {
+					const status = row.review_status || "Draft";
+					const status_class = status.toLowerCase().replace(/\s+/g, "-");
+					const report_date = row.report_date
+						? frappe.datetime.str_to_user(row.report_date)
+						: "";
+					return `
+							<tr data-dpr="${esc(row.name)}" title="${__("Open Daily Progress Report")}">
+								<td class="cm-pd-dpr-id">${esc(row.name)}</td>
+								<td>${esc(report_date)}</td>
+								<td>${flt(row.overall_progress || 0)}%</td>
+								<td><span class="cm-status cm-status-${status_class}">${__(status)}</span></td>
+								<td>${frappe.utils.icon("right", "sm")}</td>
+							</tr>
+						`;
+				})
+				.join("")
+			: `<tr><td colspan="5" class="cm-pd-empty-text" style="text-align:center; padding: 24px;">${__(
+				"No Daily Progress Reports recorded for this project yet."
+			)}</td></tr>`;
+
+		$panel.html(`
+			<div class="cm-pd-card">
+				<div class="cm-pd-dpr-header">
+					<div class="cm-pd-card-title">${__("Daily Progress Reports")}</div>
+					<div class="cm-pd-dpr-actions">
+						<button class="btn btn-xs btn-default cm-pd-open-dprs">${__("View All")}</button>
+						<button class="btn btn-xs btn-primary cm-pd-new-dpr">${__("New DPR")}</button>
+					</div>
+				</div>
+				<div class="cm-pd-dpr-table-wrap">
+					<table class="cm-pd-dpr-table">
+						<thead>
+							<tr>
+								<th>${__("DPR ID")}</th>
+								<th>${__("Report Date")}</th>
+								<th>${__("Progress")}</th>
+								<th>${__("Review Status")}</th>
+								<th></th>
+							</tr>
+						</thead>
+						<tbody>${rows_html}</tbody>
+					</table>
+				</div>
+			</div>
+		`);
+
+		$panel
+			.find(".cm-pd-open-dprs")
+			.on("click", () => frappe.set_route("daily-progress-reports"));
+		$panel
+			.find(".cm-pd-new-dpr")
+			.on("click", () => frappe.new_doc("Daily Progress Report", { project: mapped_project }));
+		$panel.on("click", "tbody tr[data-dpr]", (e) => {
+			frappe.set_route("Form", "Daily Progress Report", $(e.currentTarget).attr("data-dpr"));
+		});
+	}
+
+	// Splits overall progress evenly across the standard construction phases.
+	get_phases() {
+		const phases = construction_management.PROJECT_PHASES;
+		const share = 100 / phases.length;
+
+		return phases.map((name, index) => {
+			const done = (this.project.progress - index * share) / share;
+			const percent = Math.round(Math.min(Math.max(done, 0), 1) * 100);
+			const status = percent >= 100 ? "Completed" : percent > 0 ? "In Progress" : "Not Started";
+			return { name, percent, status };
+		});
 	}
 
 	stat_card(label, value, note) {
