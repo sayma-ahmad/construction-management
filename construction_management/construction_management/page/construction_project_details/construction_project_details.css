@@ -153,6 +153,16 @@
 	color: var(--text-color);
 }
 
+/* Tasks tab */
+.cm-pd-tasks-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: var(--margin-sm);
+	margin-bottom: var(--margin-sm);
+}
+
 /* Phases */
 .cm-pd-phase {
 	display: flex;

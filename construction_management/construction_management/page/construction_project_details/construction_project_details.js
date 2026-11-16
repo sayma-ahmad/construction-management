@@ -1,5 +1,6 @@
 const CM_PROJECT_DETAIL_ASSETS = [
 	"/assets/construction_management/js/sample_projects.js",
+	"/assets/construction_management/js/project_tasks.js",
 	"/assets/construction_management/css/construction_management.css",
 ];
 
@@ -13,11 +14,6 @@ const CM_PROJECT_TABS = [
 ];
 
 const CM_PROJECT_PLACEHOLDERS = {
-	tasks: {
-		icon: "list-alt",
-		title: "Tasks",
-		text: "The task list for this project will appear here once task tracking is connected.",
-	},
 	dpr: {
 		icon: "today",
 		title: "Daily Progress Reports",
@@ -101,11 +97,31 @@ class ProjectDetails {
 			</div>
 
 			<div class="cm-pd-panel" data-panel="overview">${this.overview_panel()}</div>
+			<div class="cm-pd-panel" data-panel="tasks"></div>
 			<div class="cm-pd-panel" data-panel="phases">${this.phases_panel()}</div>
 			${Object.keys(CM_PROJECT_PLACEHOLDERS)
 				.map((key) => `<div class="cm-pd-panel" data-panel="${key}">${this.placeholder_panel(key)}</div>`)
 				.join("")}
 		`);
+		this.render_tasks();
+	}
+
+	render_tasks() {
+		const $panel = this.$wrapper.find('[data-panel="tasks"]');
+		$panel.html(`
+			<div class="cm-pd-tasks-header">
+				<span class="cm-pd-subtitle">${__("Tasks for {0}", [frappe.utils.escape_html(this.project.name)])}</span>
+				<button class="btn btn-xs btn-default cm-pd-all-tasks">${__("Open in Project Tasks")}</button>
+			</div>
+		`);
+		$panel.find(".cm-pd-all-tasks").on("click", () => frappe.set_route("construction-tasks", this.project.code));
+
+		new construction_management.TaskList({
+			parent: $panel,
+			tasks: construction_management.SAMPLE_TASKS.filter((task) => task.project === this.project.code),
+			show_project: false,
+			show_create: true,
+		});
 	}
 
 	render_not_found() {
