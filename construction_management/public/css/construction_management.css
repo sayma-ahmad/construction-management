@@ -351,3 +351,25 @@
 		grid-template-columns: minmax(0, 1fr);
 	}
 }
+
+/* Daily Progress Report review status pills */
+.cm-status-draft {
+	background: transparent;
+	color: var(--gray-700);
+	border: 1px solid var(--gray-400);
+}
+
+.cm-status-approved {
+	background: var(--bg-green);
+	color: var(--green-700);
+}
+
+.cm-status-revision-requested {
+	background: var(--bg-orange);
+	color: var(--orange-700);
+}
+
+.cm-status-cancelled {
+	background: var(--gray-200);
+	color: var(--gray-600);
+}

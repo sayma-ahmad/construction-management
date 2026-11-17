@@ -18,11 +18,28 @@ from construction_management.construction_management.doctype.daily_progress_repo
 class TestDailyProgressReport(FrappeTestCase):
 	"""Tests for Daily Progress Report validations, totals, and lifecycle."""
 
-	def _create_project(self, suffix):
+	def _get_or_create_company(self):
+		company = frappe.db.get_value("Company", {}, "name")
+		if company:
+			return company
+		doc = frappe.get_doc(
+			{
+				"doctype": "Company",
+				"company_name": f"Test Construction Co {frappe.generate_hash(length=4)}",
+				"abbr": f"TC{frappe.generate_hash(length=3).upper()}",
+				"default_currency": "INR",
+				"country": "India",
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		return doc.name
+
+	def _create_project(self, suffix, company=None):
 		project = frappe.get_doc(
 			{
 				"doctype": "Project",
 				"project_name": f"Test Construction Project {suffix}",
+				"company": company or self._get_or_create_company(),
 			}
 		)
 		project.insert(ignore_permissions=True)
@@ -349,6 +366,50 @@ class TestDailyProgressReport(FrappeTestCase):
 		self.assertEqual(len(page_1["records"]), 1)
 		self.assertEqual(len(page_2["records"]), 1)
 		self.assertNotEqual(page_1["records"][0]["name"], page_2["records"][0]["name"])
+
+	def test_cancellation_permissions_by_role_and_review_status(self):
+		project = self._create_project(frappe.generate_hash(length=6))
+		dpr = self._make_dpr(project.name)
+		dpr.insert()
+		dpr.submit()
+
+		projects_user = self._create_user_with_role("Projects User")
+		projects_manager = self._create_user_with_role("Projects Manager")
+		sys_manager = self._create_user_with_role("System Manager")
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		# Projects User cannot cancel any submitted DPR
+		frappe.set_user(projects_user)
+		self.assertFalse(frappe.has_permission("Daily Progress Report", "cancel", user=projects_user))
+		dpr_user_view = frappe.get_doc("Daily Progress Report", dpr.name)
+		self.assertRaises(frappe.PermissionError, dpr_user_view.cancel)
+
+		# Projects Manager can cancel a Pending Review DPR
+		frappe.set_user(projects_manager)
+		self.assertTrue(frappe.has_permission("Daily Progress Report", "cancel", user=projects_manager))
+		dpr_mgr_view = frappe.get_doc("Daily Progress Report", dpr.name)
+		dpr_mgr_view.cancel()
+		dpr_mgr_view.reload()
+		self.assertEqual(dpr_mgr_view.docstatus, 2)
+		self.assertEqual(dpr_mgr_view.review_status, "Cancelled")
+
+		# Projects Manager cannot cancel an Approved DPR, while System Manager can
+		frappe.set_user("Administrator")
+		approved_dpr = self._make_dpr(project.name)
+		approved_dpr.insert()
+		approved_dpr.submit()
+		approve_dpr(approved_dpr.name, "Approved for record")
+
+		frappe.set_user(projects_manager)
+		approved_mgr_view = frappe.get_doc("Daily Progress Report", approved_dpr.name)
+		self.assertRaises(frappe.PermissionError, approved_mgr_view.cancel)
+
+		frappe.set_user(sys_manager)
+		approved_sys_view = frappe.get_doc("Daily Progress Report", approved_dpr.name)
+		approved_sys_view.cancel()
+		approved_sys_view.reload()
+		self.assertEqual(approved_sys_view.docstatus, 2)
+		self.assertEqual(approved_sys_view.review_status, "Cancelled")
 
 	def test_get_dpr_list_and_get_project_dprs(self):
 		suffix = frappe.generate_hash(length=6)
