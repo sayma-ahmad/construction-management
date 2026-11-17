@@ -41,6 +41,17 @@
 	color: var(--gray-600);
 }
 
+.cm-status-draft {
+	background: transparent;
+	color: var(--gray-700);
+	border: 1px dashed var(--gray-400);
+}
+
+.cm-status-warning {
+	background: var(--bg-orange, #fff4e5);
+	color: var(--orange-700, #b25e00);
+}
+
 /* Material statuses */
 .cm-status-active {
 	background: var(--bg-blue);

@@ -100,11 +100,10 @@
   },
   {
    "color": "Grey",
-   "doc_view": "List",
    "icon": "buying",
    "label": "Purchase Orders",
-   "link_to": "Purchase Order",
-   "type": "DocType"
+   "link_to": "construction-purchase-orders",
+   "type": "Page"
   },
   {
    "color": "Grey",
