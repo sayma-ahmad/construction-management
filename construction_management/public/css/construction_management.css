@@ -41,6 +41,17 @@
 	color: var(--gray-600);
 }
 
+/* Material statuses */
+.cm-status-active {
+	background: var(--bg-blue);
+	color: var(--blue-700);
+}
+
+.cm-status-disabled {
+	background: var(--gray-200);
+	color: var(--gray-600);
+}
+
 /* Task statuses (Completed reuses .cm-status-completed) */
 .cm-status-open {
 	background: transparent;
