@@ -43,7 +43,9 @@ required_apps = ["erpnext"]
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"Material Request": "public/js/material_request.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -143,6 +145,29 @@ doc_events = {
 		"validate": "construction_management.materials.validate_item",
 	}
 }
+	"Material Request": {
+		"validate": "construction_management.construction_management.material_request.validate_construction_material_request",
+	}
+}
+
+fixtures = [
+	{
+		"dt": "Custom Field",
+		"filters": [["dt", "=", "Material Request"], ["module", "=", "Construction Management"]],
+	},
+	{
+		"dt": "Custom DocPerm",
+		"filters": [
+			["parent", "in", ["Material Request", "Item", "Issue", "Issue Type", "Issue Priority"]]
+		],
+	},
+	{
+		"dt": "Issue Type",
+		"filters": [
+			["name", "in", ["Safety", "Quality", "Material", "Equipment", "Design", "Delay", "Other"]]
+		],
+	},
+]
 
 # Scheduled Tasks
 # ---------------

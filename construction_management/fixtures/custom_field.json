@@ -1,0 +1,93 @@
+[
+ {
+  "doctype": "Custom Field",
+  "dt": "Material Request",
+  "fieldname": "custom_construction_section",
+  "fieldtype": "Section Break",
+  "insert_after": "amended_from",
+  "label": "Construction Details",
+  "module": "Construction Management",
+  "name": "Material Request-custom_construction_section"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Material Request",
+  "fieldname": "custom_project",
+  "fieldtype": "Link",
+  "in_list_view": 1,
+  "in_standard_filter": 1,
+  "insert_after": "custom_construction_section",
+  "label": "Project",
+  "module": "Construction Management",
+  "name": "Material Request-custom_project",
+  "options": "Project",
+  "search_index": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Material Request",
+  "fieldname": "custom_task",
+  "fieldtype": "Link",
+  "insert_after": "custom_project",
+  "label": "Task",
+  "module": "Construction Management",
+  "name": "Material Request-custom_task",
+  "options": "Task"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Material Request",
+  "fieldname": "custom_site_location",
+  "fieldtype": "Data",
+  "insert_after": "custom_task",
+  "label": "Site Location",
+  "module": "Construction Management",
+  "name": "Material Request-custom_site_location"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Material Request",
+  "fieldname": "custom_construction_column_break",
+  "fieldtype": "Column Break",
+  "insert_after": "custom_site_location",
+  "module": "Construction Management",
+  "name": "Material Request-custom_construction_column_break"
+ },
+ {
+  "default": "Medium",
+  "doctype": "Custom Field",
+  "dt": "Material Request",
+  "fieldname": "custom_priority",
+  "fieldtype": "Select",
+  "in_standard_filter": 1,
+  "insert_after": "custom_construction_column_break",
+  "label": "Priority",
+  "module": "Construction Management",
+  "name": "Material Request-custom_priority",
+  "options": "Low\nMedium\nHigh\nUrgent"
+ },
+ {
+  "default": "__user",
+  "doctype": "Custom Field",
+  "dt": "Material Request",
+  "fieldname": "custom_requested_by",
+  "fieldtype": "Link",
+  "insert_after": "custom_priority",
+  "label": "Requested By",
+  "module": "Construction Management",
+  "name": "Material Request-custom_requested_by",
+  "options": "User",
+  "read_only": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Material Request",
+  "fieldname": "custom_dpr",
+  "fieldtype": "Link",
+  "insert_after": "custom_requested_by",
+  "label": "Daily Progress Report",
+  "module": "Construction Management",
+  "name": "Material Request-custom_dpr",
+  "options": "Daily Progress Report"
+ }
+]

@@ -8,6 +8,8 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt, now_datetime
 
+from construction_management.construction_management.utils import resolve_erpnext_project
+
 REVIEWER_ROLES = {"System Manager", "Projects Manager"}
 
 
@@ -261,30 +263,7 @@ def get_dpr_list(filters=None, search=None, start=0, page_length=20):
 @frappe.whitelist()
 def get_project_dprs(project_name=None, project_code=None):
 	"""Find a matching ERPNext Project (if any) and return its permission-filtered DPRs."""
-	matched_project = None
-
-	if project_name:
-		matches = frappe.get_list(
-			"Project",
-			fields=["name"],
-			or_filters=[
-				["Project", "name", "=", project_name],
-				["Project", "project_name", "=", project_name],
-			],
-			limit_page_length=1,
-		)
-		if matches:
-			matched_project = matches[0].name
-
-	if not matched_project and project_code:
-		matches = frappe.get_list(
-			"Project",
-			fields=["name"],
-			filters={"name": project_code},
-			limit_page_length=1,
-		)
-		if matches:
-			matched_project = matches[0].name
+	matched_project = resolve_erpnext_project(project_name=project_name, project_code=project_code)
 
 	if not matched_project:
 		return {"mapped_project": None, "dprs": []}

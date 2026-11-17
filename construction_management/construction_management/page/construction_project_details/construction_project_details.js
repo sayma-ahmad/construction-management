@@ -16,6 +16,10 @@ const CM_PROJECT_TABS = [
 
 const CM_PROJECT_DPRS_METHOD =
 	"construction_management.construction_management.doctype.daily_progress_report.daily_progress_report.get_project_dprs";
+const CM_PROJECT_MATERIALS_METHOD =
+	"construction_management.construction_management.material_request.get_project_material_requests";
+const CM_PROJECT_ISSUES_METHOD =
+	"construction_management.construction_management.issue.get_project_issues";
 
 const CM_PROJECT_PLACEHOLDERS = {
 	dpr: {
@@ -106,10 +110,18 @@ class ProjectDetails {
 			<div class="cm-pd-panel" data-panel="tasks"></div>
 			<div class="cm-pd-panel" data-panel="phases">${this.phases_panel()}</div>
 			<div class="cm-pd-panel" data-panel="dpr">${this.dpr_loading_panel()}</div>
+			<div class="cm-pd-panel" data-panel="issues">${this.issues_loading_panel()}</div>
+			<div class="cm-pd-panel" data-panel="materials">${this.materials_loading_panel()}</div>
 			${Object.keys(CM_PROJECT_PLACEHOLDERS)
 				.map((key) => `<div class="cm-pd-panel" data-panel="${key}">${this.placeholder_panel(key)}</div>`)
 				.join("")}
 		`);
+		this._dprs_loaded = false;
+		this._dprs_loading = false;
+		this._materials_loaded = false;
+		this._materials_loading = false;
+		this._issues_loaded = false;
+		this._issues_loading = false;
 		this.render_tasks();
 		this.render_phases();
 	}
@@ -171,6 +183,15 @@ class ProjectDetails {
 		this.$wrapper.find(".cm-pd-panel").each((_, el) => {
 			$(el).toggle($(el).attr("data-panel") === key);
 		});
+		if (key === "dpr" && this.project && !this._dprs_loaded && !this._dprs_loading) {
+			this.load_dprs();
+		}
+		if (key === "materials" && this.project && !this._materials_loaded && !this._materials_loading) {
+			this.load_materials();
+		}
+		if (key === "issues" && this.project && !this._issues_loaded && !this._issues_loading) {
+			this.load_issues();
+		}
 	}
 
 	overview_panel() {
@@ -260,6 +281,7 @@ class ProjectDetails {
 	load_dprs() {
 		const current_code = this.project?.code;
 		const $panel = this.$wrapper.find('.cm-pd-panel[data-panel="dpr"]');
+		this._dprs_loading = true;
 
 		frappe.call({
 			method: CM_PROJECT_DPRS_METHOD,
@@ -268,13 +290,16 @@ class ProjectDetails {
 				project_code: this.project.code,
 			},
 			callback: (r) => {
+				this._dprs_loading = false;
 				if (this.project?.code !== current_code) {
 					return;
 				}
+				this._dprs_loaded = true;
 				const data = r.message || {};
 				this.render_dpr_panel($panel, data.mapped_project, data.dprs || []);
 			},
 			error: () => {
+				this._dprs_loading = false;
 				if (this.project?.code !== current_code) {
 					return;
 				}
@@ -372,6 +397,279 @@ class ProjectDetails {
 			.on("click", () => frappe.new_doc("Daily Progress Report", { project: mapped_project }));
 		$panel.on("click", "tbody tr[data-dpr]", (e) => {
 			frappe.set_route("Form", "Daily Progress Report", $(e.currentTarget).attr("data-dpr"));
+		});
+	}
+
+	materials_loading_panel() {
+		return `
+			<div class="cm-pd-card cm-pd-empty">
+				<div class="cm-pd-empty-title">${__("Material Requisitions")}</div>
+				<div class="cm-pd-empty-text">${__("Loading Material Requisitions...")}</div>
+			</div>
+		`;
+	}
+
+	load_materials() {
+		const current_code = this.project?.code;
+		const $panel = this.$wrapper.find('.cm-pd-panel[data-panel="materials"]');
+		this._materials_loading = true;
+
+		frappe.call({
+			method: CM_PROJECT_MATERIALS_METHOD,
+			args: {
+				project_name: this.project.name,
+				project_code: this.project.code,
+			},
+			callback: (r) => {
+				this._materials_loading = false;
+				if (this.project?.code !== current_code) {
+					return;
+				}
+				this._materials_loaded = true;
+				const data = r.message || {};
+				this.render_materials_panel($panel, data.mapped_project, data.material_requests || []);
+			},
+			error: () => {
+				this._materials_loading = false;
+				if (this.project?.code !== current_code) {
+					return;
+				}
+				$panel.html(`
+					<div class="cm-pd-card cm-pd-empty">
+						<div class="cm-pd-empty-title">${__("Unable to load Material Requisitions")}</div>
+						<div class="cm-pd-empty-text">${__("Please try again or open the Material Requisitions page.")}</div>
+						<button class="btn btn-sm btn-default cm-pd-open-mrs">${__("Open Material Requisitions")}</button>
+					</div>
+				`);
+				$panel
+					.find(".cm-pd-open-mrs")
+					.on("click", () => frappe.set_route("material-requisitions"));
+			},
+		});
+	}
+
+	render_materials_panel($panel, mapped_project, material_requests) {
+		const esc = frappe.utils.escape_html;
+
+		if (!mapped_project) {
+			$panel.html(`
+				<div class="cm-pd-card cm-pd-empty">
+					<div class="cm-pd-empty-icon">${frappe.utils.icon("stock", "lg")}</div>
+					<div class="cm-pd-empty-title">${__("No Linked ERPNext Project Found")}</div>
+					<div class="cm-pd-empty-text">
+						${__(
+				'Project Details currently uses sample project data ("{0}"). No matching ERPNext Project record was found, so unrelated Material Requests are not displayed.',
+				[esc(this.project.name)]
+			)}
+					</div>
+					<button class="btn btn-sm btn-default cm-pd-open-mrs">${__("Open Material Requisitions")}</button>
+				</div>
+			`);
+			$panel
+				.find(".cm-pd-open-mrs")
+				.on("click", () => frappe.set_route("material-requisitions"));
+			return;
+		}
+
+		const rows_html = material_requests.length
+			? material_requests
+				.map((row) => {
+					const status = row.status || "Draft";
+					const status_class = status.toLowerCase().replace(/\s+/g, "-");
+					const tx_date = row.transaction_date
+						? frappe.datetime.str_to_user(row.transaction_date)
+						: "";
+					return `
+							<tr data-dpr="${esc(row.name)}" title="${__("Open Material Request")}">
+								<td class="cm-pd-dpr-id">${esc(row.name)}</td>
+								<td>${esc(tx_date)}</td>
+								<td>${esc(row.material_request_type || "")}</td>
+								<td>${esc(row.custom_priority || "")}</td>
+								<td><span class="cm-status cm-status-${status_class}">${__(status)}</span></td>
+								<td>${frappe.utils.icon("right", "sm")}</td>
+							</tr>
+						`;
+				})
+				.join("")
+			: `<tr><td colspan="6" class="cm-pd-empty-text" style="text-align:center; padding: 24px;">${__(
+				"No Material Requisitions recorded for this project yet."
+			)}</td></tr>`;
+
+		$panel.html(`
+			<div class="cm-pd-card">
+				<div class="cm-pd-dpr-header">
+					<div class="cm-pd-card-title">${__("Material Requisitions")}</div>
+					<div class="cm-pd-dpr-actions">
+						<button class="btn btn-xs btn-default cm-pd-open-mrs">${__("View All")}</button>
+						<button class="btn btn-xs btn-primary cm-pd-new-mr">${__("New Material Request")}</button>
+					</div>
+				</div>
+				<div class="cm-pd-dpr-table-wrap">
+					<table class="cm-pd-dpr-table">
+						<thead>
+							<tr>
+								<th>${__("Material Request ID")}</th>
+								<th>${__("Date")}</th>
+								<th>${__("Request Type")}</th>
+								<th>${__("Priority")}</th>
+								<th>${__("Status")}</th>
+								<th></th>
+							</tr>
+						</thead>
+						<tbody>${rows_html}</tbody>
+					</table>
+				</div>
+			</div>
+		`);
+
+		$panel
+			.find(".cm-pd-open-mrs")
+			.on("click", () => frappe.set_route("material-requisitions"));
+		$panel
+			.find(".cm-pd-new-mr")
+			.on("click", () => frappe.new_doc("Material Request", { custom_project: mapped_project }));
+		$panel.on("click", "tbody tr[data-dpr]", (e) => {
+			frappe.set_route("Form", "Material Request", $(e.currentTarget).attr("data-dpr"));
+		});
+	}
+
+	issues_loading_panel() {
+		return `
+			<div class="cm-pd-card cm-pd-empty">
+				<div class="cm-pd-empty-title">${__("Construction Issues")}</div>
+				<div class="cm-pd-empty-text">${__("Loading Construction Issues...")}</div>
+			</div>
+		`;
+	}
+
+	load_issues() {
+		const current_code = this.project?.code;
+		const $panel = this.$wrapper.find('.cm-pd-panel[data-panel="issues"]');
+		this._issues_loading = true;
+
+		frappe.call({
+			method: CM_PROJECT_ISSUES_METHOD,
+			args: {
+				project_name: this.project.name,
+				project_code: this.project.code,
+			},
+			callback: (r) => {
+				this._issues_loading = false;
+				if (this.project?.code !== current_code) {
+					return;
+				}
+				this._issues_loaded = true;
+				const data = r.message || {};
+				this.render_issues_panel($panel, data.mapped_project, data.issues || []);
+			},
+			error: () => {
+				this._issues_loading = false;
+				if (this.project?.code !== current_code) {
+					return;
+				}
+				$panel.html(`
+					<div class="cm-pd-card cm-pd-empty">
+						<div class="cm-pd-empty-title">${__("Unable to load Construction Issues")}</div>
+						<div class="cm-pd-empty-text">${__("Please try again or open the Construction Issues page.")}</div>
+						<button class="btn btn-sm btn-default cm-pd-open-issues">${__("Open Construction Issues")}</button>
+					</div>
+				`);
+				$panel
+					.find(".cm-pd-open-issues")
+					.on("click", () => frappe.set_route("construction-issues"));
+			},
+		});
+	}
+
+	render_issues_panel($panel, mapped_project, issues) {
+		const esc = frappe.utils.escape_html;
+
+		if (!mapped_project) {
+			$panel.html(`
+				<div class="cm-pd-card cm-pd-empty">
+					<div class="cm-pd-empty-icon">${frappe.utils.icon("solid-warning", "lg")}</div>
+					<div class="cm-pd-empty-title">${__("No Linked ERPNext Project Found")}</div>
+					<div class="cm-pd-empty-text">
+						${__(
+				'Project Details currently uses sample project data ("{0}"). No matching ERPNext Project record was found, so unrelated Issues are not displayed.',
+				[esc(this.project.name)]
+			)}
+					</div>
+					<button class="btn btn-sm btn-default cm-pd-open-issues">${__("Open Construction Issues")}</button>
+				</div>
+			`);
+			$panel
+				.find(".cm-pd-open-issues")
+				.on("click", () => frappe.set_route("construction-issues"));
+			return;
+		}
+
+		const rows_html = issues.length
+			? issues
+				.map((row) => {
+					const status = row.status || "Open";
+					const status_class = status.toLowerCase().replace(/\s+/g, "-");
+					const priority = row.priority || "";
+					const priority_class = priority.toLowerCase().replace(/\s+/g, "-");
+					const assigned = (row.assigned_to || []).length
+						? row.assigned_to.join(", ")
+						: __("Unassigned");
+					return `
+							<tr data-dpr="${esc(row.name)}" title="${__("Open Issue")}">
+								<td class="cm-pd-dpr-id">${esc(row.name)}</td>
+								<td>${esc(row.subject || "")}</td>
+								<td>${esc(row.issue_type || "")}</td>
+								<td>${priority
+							? `<span class="cm-issue-priority cm-issue-priority-${esc(priority_class)}">${esc(priority)}</span>`
+							: ""
+						}</td>
+								<td><span class="cm-status cm-status-${status_class}">${__(status)}</span></td>
+								<td>${esc(assigned)}</td>
+								<td>${frappe.utils.icon("right", "sm")}</td>
+							</tr>
+						`;
+				})
+				.join("")
+			: `<tr><td colspan="7" class="cm-pd-empty-text" style="text-align:center; padding: 24px;">${__(
+				"No Construction Issues recorded for this project yet."
+			)}</td></tr>`;
+
+		$panel.html(`
+			<div class="cm-pd-card">
+				<div class="cm-pd-dpr-header">
+					<div class="cm-pd-card-title">${__("Construction Issues")}</div>
+					<div class="cm-pd-dpr-actions">
+						<button class="btn btn-xs btn-default cm-pd-open-issues">${__("View All")}</button>
+						<button class="btn btn-xs btn-primary cm-pd-new-issue">${__("New Issue")}</button>
+					</div>
+				</div>
+				<div class="cm-pd-dpr-table-wrap">
+					<table class="cm-pd-dpr-table">
+						<thead>
+							<tr>
+								<th>${__("Issue ID")}</th>
+								<th>${__("Subject")}</th>
+								<th>${__("Issue Type")}</th>
+								<th>${__("Priority")}</th>
+								<th>${__("Status")}</th>
+								<th>${__("Assigned To")}</th>
+								<th></th>
+							</tr>
+						</thead>
+						<tbody>${rows_html}</tbody>
+					</table>
+				</div>
+			</div>
+		`);
+
+		$panel
+			.find(".cm-pd-open-issues")
+			.on("click", () => frappe.set_route("construction-issues"));
+		$panel
+			.find(".cm-pd-new-issue")
+			.on("click", () => frappe.new_doc("Issue", { project: mapped_project }));
+		$panel.on("click", "tbody tr[data-dpr]", (e) => {
+			frappe.set_route("Form", "Issue", $(e.currentTarget).attr("data-dpr"));
 		});
 	}
 
