@@ -83,8 +83,14 @@ required_apps = ["erpnext"]
 # ------------
 
 # before_install = "construction_management.install.before_install"
-after_install = "construction_management.materials.setup"
-after_migrate = "construction_management.materials.setup"
+after_install = [
+	"construction_management.materials.setup",
+	"construction_management.vendors.setup",
+]
+after_migrate = [
+	"construction_management.materials.setup",
+	"construction_management.vendors.setup",
+]
 
 # Uninstallation
 # ------------
@@ -141,7 +147,10 @@ after_migrate = "construction_management.materials.setup"
 doc_events = {
 	"Item": {
 		"validate": "construction_management.materials.validate_item",
-	}
+	},
+	"Supplier": {
+		"validate": "construction_management.vendors.validate_supplier",
+	},
 }
 
 # Scheduled Tasks
