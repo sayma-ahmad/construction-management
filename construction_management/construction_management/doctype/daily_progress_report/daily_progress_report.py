@@ -44,6 +44,15 @@ class DailyProgressReport(Document):
 	def on_submit(self):
 		self.db_set("review_status", "Pending Review")
 
+	def before_cancel(self):
+		if self.review_status == "Approved" and "System Manager" not in frappe.get_roles(
+			frappe.session.user
+		):
+			frappe.throw(
+				_("Approved Daily Progress Reports can only be cancelled by a System Manager."),
+				frappe.PermissionError,
+			)
+
 	def on_cancel(self):
 		self.db_set("review_status", "Cancelled")
 
@@ -264,6 +273,30 @@ def get_dpr_list(filters=None, search=None, start=0, page_length=20):
 def get_project_dprs(project_name=None, project_code=None):
 	"""Find a matching ERPNext Project (if any) and return its permission-filtered DPRs."""
 	matched_project = resolve_erpnext_project(project_name=project_name, project_code=project_code)
+	matched_project = None
+
+	if project_name:
+		matches = frappe.get_list(
+			"Project",
+			fields=["name"],
+			or_filters=[
+				["Project", "name", "=", project_name],
+				["Project", "project_name", "=", project_name],
+			],
+			limit_page_length=1,
+		)
+		if matches:
+			matched_project = matches[0].name
+
+	if not matched_project and project_code:
+		matches = frappe.get_list(
+			"Project",
+			fields=["name"],
+			filters={"name": project_code},
+			limit_page_length=1,
+		)
+		if matches:
+			matched_project = matches[0].name
 
 	if not matched_project:
 		return {"mapped_project": None, "dprs": []}

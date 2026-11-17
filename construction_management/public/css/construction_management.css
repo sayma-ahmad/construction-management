@@ -353,6 +353,7 @@
 }
 
 /* Material Request status pills */
+/* Daily Progress Report review status pills */
 .cm-status-draft {
 	background: transparent;
 	color: var(--gray-700);
@@ -367,6 +368,12 @@
 
 .cm-status-partially-ordered,
 .cm-status-partially-received {
+.cm-status-approved {
+	background: var(--bg-green);
+	color: var(--green-700);
+}
+
+.cm-status-revision-requested {
 	background: var(--bg-orange);
 	color: var(--orange-700);
 }
@@ -424,4 +431,7 @@
 .cm-issue-priority-high {
 	background: var(--bg-red);
 	color: var(--red-600);
+.cm-status-cancelled {
+	background: var(--gray-200);
+	color: var(--gray-600);
 }

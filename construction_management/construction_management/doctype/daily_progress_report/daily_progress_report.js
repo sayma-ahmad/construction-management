@@ -25,6 +25,8 @@ frappe.ui.form.on("Daily Progress Report", {
 	},
 
 	refresh(frm) {
+		frm.set_df_property("review_remarks", "read_only", frm.doc.docstatus !== 0 ? 1 : 0);
+
 		if (
 			frm.doc.docstatus === 1 &&
 			frm.doc.review_status === "Pending Review" &&
