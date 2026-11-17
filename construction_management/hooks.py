@@ -83,7 +83,8 @@ required_apps = ["erpnext"]
 # ------------
 
 # before_install = "construction_management.install.before_install"
-# after_install = "construction_management.install.after_install"
+after_install = "construction_management.materials.setup"
+after_migrate = "construction_management.materials.setup"
 
 # Uninstallation
 # ------------
@@ -137,13 +138,11 @@ required_apps = ["erpnext"]
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Item": {
+		"validate": "construction_management.materials.validate_item",
+	}
+}
 
 # Scheduled Tasks
 # ---------------
