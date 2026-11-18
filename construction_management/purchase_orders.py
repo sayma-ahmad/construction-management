@@ -354,6 +354,28 @@ def get_material_request_details(material_request):
 
 
 @frappe.whitelist()
+def material_request_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Link query for Material Request filtered by project and open unfulfilled balance."""
+	if not frappe.has_permission("Material Request", "read"):
+		return []
+
+	project = filters.get("project") if isinstance(filters, dict) else None
+
+	valid_mrs = get_material_requests_for_project(project=project)
+	if not valid_mrs:
+		return []
+
+	valid_names = [mr["name"] for mr in valid_mrs]
+	if txt:
+		txt_lower = txt.lower()
+		valid_names = [name for name in valid_names if txt_lower in name.lower()]
+
+	start_idx = int(start or 0)
+	page_length = int(page_len or 20)
+	return [[name, name] for name in valid_names[start_idx : start_idx + page_length]]
+
+
+@frappe.whitelist()
 def create_construction_purchase_order(
 	project,
 	supplier,
@@ -456,10 +478,31 @@ def create_construction_purchase_order(
 			row["material_request"] = mr_ref
 		if mr_item_ref:
 			row["material_request_item"] = mr_item_ref
+			# Validate that order quantity does not exceed remaining requested quantity
+			mr_item_data = frappe.db.get_value(
+				"Material Request Item",
+				mr_item_ref,
+				["qty", "ordered_qty"],
+				as_dict=True,
+			)
+			if mr_item_data:
+				rem_qty = max(0.0, flt(mr_item_data.qty) - flt(mr_item_data.ordered_qty))
+				if rem_qty <= 0:
+					frappe.throw(
+						_("Item {0} has already been fully ordered on Material Request {1}").format(
+							it.get("item_code"), mr_ref
+						)
+					)
+				if qty > rem_qty:
+					frappe.throw(
+						_("Quantity {0} for item {1} exceeds remaining requested quantity ({2}) on Material Request {3}").format(
+							qty, it.get("item_code"), rem_qty, mr_ref
+						)
+					)
 
 		po.append("items", row)
 
-	po.insert(ignore_permissions=True)
+	po.insert()
 
 	if frappe.utils.cint(submit):
 		po.submit()

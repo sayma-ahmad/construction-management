@@ -445,3 +445,88 @@ class TestPurchaseOrders(FrappeTestCase):
 				required_date=add_days(nowdate(), 7),
 				items=[],
 			)
+
+		# 4. Quantity exceeding remaining requested quantity on linked MR raises ValidationError
+		company = self._get_or_create_company()
+		warehouse = self._get_or_create_warehouse(company)
+		mr = frappe.get_doc(
+			{
+				"doctype": "Material Request",
+				"material_request_type": "Purchase",
+				"company": company,
+				"cm_project": project_name,
+				"transaction_date": nowdate(),
+				"schedule_date": add_days(nowdate(), 10),
+				"items": [
+					{
+						"item_code": item_code,
+						"qty": 50,
+						"schedule_date": add_days(nowdate(), 10),
+						"project": project_name,
+						"warehouse": warehouse,
+					}
+				],
+			}
+		)
+		mr.insert(ignore_permissions=True)
+		mr.submit()
+
+		# Attempting to order 60 when only 50 was requested must raise ValidationError
+		with self.assertRaises(frappe.ValidationError):
+			purchase_orders.create_construction_purchase_order(
+				project=project_name,
+				supplier=supplier_name,
+				required_date=add_days(nowdate(), 7),
+				material_request=mr.name,
+				items=[
+					{
+						"item_code": item_code,
+						"qty": 60,
+						"rate": 100,
+						"material_request": mr.name,
+						"material_request_item": mr.items[0].name,
+					}
+				],
+			)
+
+	def test_11_material_request_query_filtering(self):
+		"""Verify material_request_query returns only open MRs for the requested project."""
+		company = self._get_or_create_company()
+		project_a = self._create_project("Query-A")
+		project_b = self._create_project("Query-B")
+		item_code = self._get_or_create_item()
+		warehouse = self._get_or_create_warehouse(company)
+
+		mr_a = frappe.get_doc(
+			{
+				"doctype": "Material Request",
+				"material_request_type": "Purchase",
+				"company": company,
+				"cm_project": project_a,
+				"transaction_date": nowdate(),
+				"schedule_date": add_days(nowdate(), 10),
+				"items": [
+					{
+						"item_code": item_code,
+						"qty": 20,
+						"schedule_date": add_days(nowdate(), 10),
+						"project": project_a,
+						"warehouse": warehouse,
+					}
+				],
+			}
+		)
+		mr_a.insert(ignore_permissions=True)
+		mr_a.submit()
+
+		results_a = purchase_orders.material_request_query(
+			"Material Request", "", "name", 0, 20, {"project": project_a}
+		)
+		names_a = [r[0] for r in results_a]
+		self.assertIn(mr_a.name, names_a)
+
+		results_b = purchase_orders.material_request_query(
+			"Material Request", "", "name", 0, 20, {"project": project_b}
+		)
+		names_b = [r[0] for r in results_b]
+		self.assertNotIn(mr_a.name, names_b)

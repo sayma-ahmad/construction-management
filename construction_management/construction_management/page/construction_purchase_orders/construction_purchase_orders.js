@@ -274,12 +274,12 @@ class PurchaseOrderList {
 					reqd: 1,
 					change: () => {
 						const proj = dialog.get_value("project");
+						dialog.set_value("material_request", "");
 						dialog.set_df_property("material_request", "get_query", () => {
 							return {
+								query: "construction_management.purchase_orders.material_request_query",
 								filters: {
-									material_request_type: "Purchase",
-									docstatus: 1,
-									status: ["not in", ["Stopped", "Cancelled", "Ordered"]],
+									project: proj || "",
 								},
 							};
 						});
@@ -299,11 +299,11 @@ class PurchaseOrderList {
 					options: "Material Request",
 					label: __("Link Material Request"),
 					get_query: () => {
+						const proj = dialog ? dialog.get_value("project") : "";
 						return {
+							query: "construction_management.purchase_orders.material_request_query",
 							filters: {
-								material_request_type: "Purchase",
-								docstatus: 1,
-								status: ["not in", ["Stopped", "Cancelled", "Ordered"]],
+								project: proj || "",
 							},
 						};
 					},
@@ -328,6 +328,7 @@ class PurchaseOrderList {
 										qty: it.remaining_qty || it.qty || 1,
 										rate: it.rate || 0,
 										stock_uom: it.stock_uom,
+										remaining_qty: it.remaining_qty,
 										material_request: mr_name,
 										material_request_item: it.material_request_item,
 									}));
@@ -386,6 +387,16 @@ class PurchaseOrderList {
 				}
 				if (!it.qty || it.qty <= 0) {
 					frappe.msgprint(__("Quantity must be greater than zero for {0}.").format(it.item_code));
+					return;
+				}
+				if (it.remaining_qty && it.qty > it.remaining_qty) {
+					frappe.msgprint(
+						__("Quantity {0} for item {1} cannot exceed remaining requested quantity of {2}.").format(
+							it.qty,
+							it.item_code,
+							it.remaining_qty
+						)
+					);
 					return;
 				}
 			}
