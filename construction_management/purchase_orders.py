@@ -107,6 +107,14 @@ def validate_purchase_order(doc, method=None):
 	project = doc.get("project") or doc.get("cm_project")
 
 	for item in doc.get("items", []):
+		# Validate positive quantity
+		if flt(item.get("qty", 0)) <= 0:
+			frappe.throw(
+				_("Row #{0}: Quantity must be greater than zero for item {1}").format(
+					item.idx or 1, frappe.bold(item.get("item_code") or "")
+				)
+			)
+
 		# Sync project down to item lines for ERPNext accounting & cost tracking
 		if project and not item.get("project"):
 			item.project = project

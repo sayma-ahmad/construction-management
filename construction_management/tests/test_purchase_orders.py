@@ -412,3 +412,36 @@ class TestPurchaseOrders(FrappeTestCase):
 					self.assertTrue(bool(it.material_request_item), f"Item {it.item_code} in PO {po['name']} missing material_request_item")
 					mr_item_exists = frappe.db.exists("Material Request Item", it.material_request_item)
 					self.assertTrue(bool(mr_item_exists), f"Referenced MR Item {it.material_request_item} does not exist")
+
+	def test_10_quantity_validation(self):
+		"""Verify that zero, negative, or empty item quantities fail validation."""
+		project_name = self._create_project("Qty-Val-Proj")
+		supplier_name = self._get_or_create_supplier()
+		item_code = self._get_or_create_item()
+
+		# 1. Zero quantity should raise ValidationError
+		with self.assertRaises(frappe.ValidationError):
+			purchase_orders.create_construction_purchase_order(
+				project=project_name,
+				supplier=supplier_name,
+				required_date=add_days(nowdate(), 7),
+				items=[{"item_code": item_code, "qty": 0, "rate": 100}],
+			)
+
+		# 2. Negative quantity should raise ValidationError
+		with self.assertRaises(frappe.ValidationError):
+			purchase_orders.create_construction_purchase_order(
+				project=project_name,
+				supplier=supplier_name,
+				required_date=add_days(nowdate(), 7),
+				items=[{"item_code": item_code, "qty": -5, "rate": 100}],
+			)
+
+		# 3. Empty item list should raise ValidationError
+		with self.assertRaises(frappe.ValidationError):
+			purchase_orders.create_construction_purchase_order(
+				project=project_name,
+				supplier=supplier_name,
+				required_date=add_days(nowdate(), 7),
+				items=[],
+			)
