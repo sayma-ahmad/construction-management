@@ -44,6 +44,15 @@ class DailyProgressReport(Document):
 	def on_submit(self):
 		self.db_set("review_status", "Pending Review")
 
+	def before_cancel(self):
+		if self.review_status == "Approved" and "System Manager" not in frappe.get_roles(
+			frappe.session.user
+		):
+			frappe.throw(
+				_("Approved Daily Progress Reports can only be cancelled by a System Manager."),
+				frappe.PermissionError,
+			)
+
 	def on_cancel(self):
 		self.db_set("review_status", "Cancelled")
 

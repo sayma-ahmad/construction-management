@@ -83,11 +83,10 @@
       },
       {
          "color": "Grey",
-         "doc_view": "List",
          "icon": "organization",
          "label": "Vendors",
-         "link_to": "Supplier",
-         "type": "DocType"
+         "link_to": "construction-vendors",
+         "type": "Page"
       },
       {
          "color": "Grey",
