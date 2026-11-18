@@ -38,6 +38,21 @@ class TestPurchaseOrders(FrappeTestCase):
 		doc.insert(ignore_permissions=True)
 		return doc.name
 
+	def _get_or_create_warehouse(self, company):
+		warehouse = frappe.db.get_value("Warehouse", {"company": company, "is_group": 0}, "name")
+		if warehouse:
+			return warehouse
+		abbr = frappe.db.get_value("Company", company, "abbr") or "TC"
+		doc = frappe.get_doc(
+			{
+				"doctype": "Warehouse",
+				"warehouse_name": f"Stores {frappe.generate_hash(length=4)}",
+				"company": company,
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		return doc.name
+
 	def _get_or_create_supplier(self):
 		supplier = frappe.db.get_value("Supplier", {}, "name")
 		if supplier:
@@ -57,6 +72,8 @@ class TestPurchaseOrders(FrappeTestCase):
 		item_code = code or f"TEST-MAT-{frappe.generate_hash(length=4)}"
 		if frappe.db.exists("Item", item_code):
 			return item_code
+		company = self._get_or_create_company()
+		warehouse = self._get_or_create_warehouse(company)
 		doc = frappe.get_doc(
 			{
 				"doctype": "Item",
@@ -67,6 +84,12 @@ class TestPurchaseOrders(FrappeTestCase):
 				"is_stock_item": 1,
 				"cm_material_type": "Civil",
 				"cm_material_grade": "OPC 53",
+				"item_defaults": [
+					{
+						"company": company,
+						"default_warehouse": warehouse,
+					}
+				],
 			}
 		)
 		doc.insert(ignore_permissions=True)
@@ -135,6 +158,7 @@ class TestPurchaseOrders(FrappeTestCase):
 		item_code = self._get_or_create_item()
 
 		# 1. Create a Material Request
+		warehouse = self._get_or_create_warehouse(company)
 		mr = frappe.get_doc(
 			{
 				"doctype": "Material Request",
@@ -149,6 +173,7 @@ class TestPurchaseOrders(FrappeTestCase):
 						"qty": 100,
 						"schedule_date": add_days(nowdate(), 10),
 						"project": project_name,
+						"warehouse": warehouse,
 					}
 				],
 			}
@@ -214,6 +239,7 @@ class TestPurchaseOrders(FrappeTestCase):
 		project_name = self._create_project("MR-API-Proj")
 		item_code = self._get_or_create_item()
 
+		warehouse = self._get_or_create_warehouse(company)
 		mr = frappe.get_doc(
 			{
 				"doctype": "Material Request",
@@ -228,6 +254,7 @@ class TestPurchaseOrders(FrappeTestCase):
 						"qty": 30,
 						"schedule_date": add_days(nowdate(), 10),
 						"project": project_name,
+						"warehouse": warehouse,
 					}
 				],
 			}
@@ -290,6 +317,7 @@ class TestPurchaseOrders(FrappeTestCase):
 		item_code = self._get_or_create_item()
 
 		# Create MR for 100 units
+		warehouse = self._get_or_create_warehouse(company)
 		mr = frappe.get_doc(
 			{
 				"doctype": "Material Request",
@@ -304,6 +332,7 @@ class TestPurchaseOrders(FrappeTestCase):
 						"qty": 100,
 						"schedule_date": add_days(nowdate(), 10),
 						"project": project_name,
+						"warehouse": warehouse,
 					}
 				],
 			}

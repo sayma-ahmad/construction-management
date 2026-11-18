@@ -409,6 +409,29 @@ def create_construction_purchase_order(
 			row["uom"] = it.get("stock_uom")
 			row["stock_uom"] = it.get("stock_uom")
 
+		# Auto-resolve warehouse if item is a stock item
+		warehouse = it.get("warehouse")
+		if not warehouse:
+			warehouse = frappe.db.get_value(
+				"Item Default",
+				{"parent": it.get("item_code"), "company": company},
+				"default_warehouse",
+			)
+		if not warehouse:
+			warehouse = frappe.db.get_value(
+				"Warehouse",
+				{"company": company, "is_group": 0},
+				"name",
+			)
+		if not warehouse:
+			warehouse = frappe.db.get_value(
+				"Warehouse",
+				{"is_group": 0},
+				"name",
+			)
+		if warehouse:
+			row["warehouse"] = warehouse
+
 		# Item-level Material Request linkage
 		mr_ref = it.get("material_request") or material_request
 		mr_item_ref = it.get("material_request_item")
