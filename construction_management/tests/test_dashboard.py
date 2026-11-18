@@ -168,3 +168,15 @@ class TestDashboard(FrappeTestCase):
 			self.assertIn("time", item)
 			self.assertTrue(bool(item["text"]))
 			self.assertTrue(bool(item["time"]))
+
+	def test_09_kpis_icons_and_navigation(self):
+		"""Verify that every KPI card has an icon and a valid navigation route/doctype."""
+		data = dashboard.get_dashboard_data()
+		kpis = data["kpis"]
+
+		self.assertEqual(len(kpis), 8)
+		for kpi in kpis:
+			self.assertTrue(bool(kpi.get("icon")), f"KPI {kpi['label']} missing icon")
+			self.assertTrue(bool(kpi.get("doctype")), f"KPI {kpi['label']} missing doctype")
+			self.assertTrue(bool(kpi.get("route")), f"KPI {kpi['label']} missing route")
+			self.assertTrue(frappe.db.exists("DocType", kpi["doctype"]), f"Target DocType {kpi['doctype']} does not exist")

@@ -95,6 +95,17 @@ function render_dashboard(container, data) {
 	$dashboard.find(".cm-project-list").html(project_table(data.projects || []));
 	$dashboard.find(".cm-activity-list").html((data.activity || []).map(activity_item).join(""));
 
+	// KPI card click handler to open underlying object / list
+	$dashboard.find(".cm-kpi-grid").on("click", ".cm-kpi-clickable", function () {
+		const route = $(this).attr("data-route");
+		const doctype = $(this).attr("data-doctype");
+		if (route) {
+			frappe.set_route(route.split("/"));
+		} else if (doctype) {
+			frappe.set_route("List", doctype);
+		}
+	});
+
 	// Project row click handler
 	$dashboard.find(".cm-project-list").on("click", "tr[data-project]", function () {
 		const proj = $(this).attr("data-project");
@@ -163,10 +174,28 @@ function kpi_card(kpi) {
 		? format_currency(kpi.value || 0, kpi.currency || "INR", 0)
 		: format_number(kpi.value || 0, null, 0);
 
+	// Ensure every KPI has an icon with robust fallbacks
+	const iconMap = {
+		project: "project",
+		order: "order",
+		tool: "tool",
+		"list-alt": "list",
+		stock: "stock",
+		alert: "alert",
+		package: "box",
+		box: "box",
+		"credit-card": "credit-card",
+	};
+	const iconName = iconMap[kpi.icon] || kpi.icon || "folder";
+	const iconHtml = frappe.utils.icon(iconName, "md") || frappe.utils.icon("folder", "md") || "📊";
+
 	return `
-		<div class="cm-card cm-kpi">
-			<div class="cm-kpi-icon">${frappe.utils.icon(kpi.icon, "md") || "📊"}</div>
-			<div>
+		<div class="cm-card cm-kpi cm-kpi-clickable"
+			data-route="${frappe.utils.escape_html(kpi.route || "")}"
+			data-doctype="${frappe.utils.escape_html(kpi.doctype || "")}"
+			title="${__("Click to view {0}", [__(kpi.label)])}">
+			<div class="cm-kpi-icon">${iconHtml}</div>
+			<div class="cm-kpi-content">
 				<div class="cm-kpi-label">${__(kpi.label)}</div>
 				<div class="cm-kpi-value">${formattedVal}</div>
 				<div class="cm-kpi-note">${__(kpi.note)}</div>
