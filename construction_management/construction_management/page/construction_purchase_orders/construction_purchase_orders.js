@@ -89,6 +89,42 @@ class PurchaseOrderList {
 	make_layout() {
 		this.$wrapper = $(`
 			<div class="cm-purchase-orders">
+				<!-- KPI Cards Grid -->
+				<div class="cm-po-kpi-grid">
+					<div class="cm-po-kpi-card">
+						<div class="cm-po-kpi-icon primary">${frappe.utils.icon("order", "md") || "📋"}</div>
+						<div class="cm-po-kpi-body">
+							<div class="cm-po-kpi-label">${__("Total Orders")}</div>
+							<div class="cm-po-kpi-value cm-kpi-total">0</div>
+							<div class="cm-po-kpi-note">${__("All purchase orders")}</div>
+						</div>
+					</div>
+					<div class="cm-po-kpi-card">
+						<div class="cm-po-kpi-icon success">${frappe.utils.icon("tool", "md") || "⚡"}</div>
+						<div class="cm-po-kpi-body">
+							<div class="cm-po-kpi-label">${__("Active Orders")}</div>
+							<div class="cm-po-kpi-value cm-kpi-active">0</div>
+							<div class="cm-po-kpi-note">${__("Draft & In Fulfillment")}</div>
+						</div>
+					</div>
+					<div class="cm-po-kpi-card">
+						<div class="cm-po-kpi-icon warning">${frappe.utils.icon("credit-card", "md") || "💰"}</div>
+						<div class="cm-po-kpi-body">
+							<div class="cm-po-kpi-label">${__("Total Spend")}</div>
+							<div class="cm-po-kpi-value cm-kpi-spend">₹0</div>
+							<div class="cm-po-kpi-note">${__("Total procurement value")}</div>
+						</div>
+					</div>
+					<div class="cm-po-kpi-card">
+						<div class="cm-po-kpi-icon info">${frappe.utils.icon("stock", "md") || "📦"}</div>
+						<div class="cm-po-kpi-body">
+							<div class="cm-po-kpi-label">${__("Pending Receipts")}</div>
+							<div class="cm-po-kpi-value cm-kpi-receipts">0</div>
+							<div class="cm-po-kpi-note">${__("Awaiting site delivery")}</div>
+						</div>
+					</div>
+				</div>
+
 				<div class="cm-tasks-card">
 					<div class="cm-tasks-toolbar">
 						<div>
@@ -179,6 +215,19 @@ class PurchaseOrderList {
 		const totalVal = filtered.reduce((acc, po) => acc + (po.grand_total || 0), 0);
 		const currency = filtered[0]?.currency || "INR";
 
+		// Update KPI cards
+		const activeCount = filtered.filter((po) =>
+			["Draft", "To Receive and Bill", "To Receive", "To Bill"].includes(po.status)
+		).length;
+		const pendingReceipts = filtered.filter((po) =>
+			["To Receive and Bill", "To Receive"].includes(po.status)
+		).length;
+
+		this.$wrapper.find(".cm-kpi-total").text(filtered.length);
+		this.$wrapper.find(".cm-kpi-active").text(activeCount);
+		this.$wrapper.find(".cm-kpi-spend").text(format_currency(totalVal, currency, 0));
+		this.$wrapper.find(".cm-kpi-receipts").text(pendingReceipts);
+
 		this.$wrapper
 			.find(".cm-tasks-count")
 			.text(__("Showing {0} of {1} Purchase Orders", [filtered.length, this.orders.length]));
@@ -228,9 +277,9 @@ class PurchaseOrderList {
 						dialog.set_df_property("material_request", "get_query", () => {
 							return {
 								filters: {
-									project: proj,
 									material_request_type: "Purchase",
-									docstatus: ["<", 2],
+									docstatus: 1,
+									status: ["not in", ["Stopped", "Cancelled", "Ordered"]],
 								},
 							};
 						});
@@ -249,6 +298,15 @@ class PurchaseOrderList {
 					fieldtype: "Link",
 					options: "Material Request",
 					label: __("Link Material Request"),
+					get_query: () => {
+						return {
+							filters: {
+								material_request_type: "Purchase",
+								docstatus: 1,
+								status: ["not in", ["Stopped", "Cancelled", "Ordered"]],
+							},
+						};
+					},
 					change: async () => {
 						const mr_name = dialog.get_value("material_request");
 						if (!mr_name) return;
@@ -264,10 +322,10 @@ class PurchaseOrderList {
 									if (r.message.schedule_date) {
 										dialog.set_value("required_date", r.message.schedule_date);
 									}
-									items = r.message.items.map((it) => ({
+									items = (r.message.items || []).map((it) => ({
 										item_code: it.item_code,
 										item_name: it.item_name,
-										qty: it.qty || 1,
+										qty: it.remaining_qty || it.qty || 1,
 										rate: it.rate || 0,
 										stock_uom: it.stock_uom,
 										material_request: mr_name,
@@ -306,107 +364,121 @@ class PurchaseOrderList {
 					fieldtype: "HTML",
 				},
 			],
-			primary_action_label: __("Create Purchase Order"),
-			primary_action: (values) => {
-				if (!items.length) {
-					frappe.msgprint(__("Please add at least one material item to the Purchase Order."));
-					return;
-				}
-
-				for (let it of items) {
-					if (!it.item_code) {
-						frappe.msgprint(__("Item Code is required for all rows."));
-						return;
-					}
-					if (flt(it.qty) <= 0) {
-						frappe.msgprint(__("Quantity must be greater than zero for {0}", [it.item_code]));
-						return;
-					}
-				}
-
-				frappe.call({
-					method: "construction_management.purchase_orders.create_construction_purchase_order",
-					args: {
-						project: values.project,
-						supplier: values.supplier,
-						required_date: values.required_date,
-						material_request: values.material_request,
-						delivery_site: values.delivery_site,
-						delivery_contact: values.delivery_contact,
-						items: items,
-						submit: 0,
-					},
-					freeze: true,
-					freeze_message: __("Creating Purchase Order..."),
-					callback: (r) => {
-						if (r.message) {
-							dialog.hide();
-							frappe.show_alert({
-								message: __("Purchase Order {0} created successfully", [r.message.name]),
-								indicator: "green",
-							});
-							this.refresh();
-							frappe.set_route("Form", "Purchase Order", r.message.name);
-						}
-					},
-				});
-			},
+			primary_action_label: __("Save as Draft"),
+			primary_action: () => save_po(0),
 		});
 
-		function render_dialog_items() {
-			const $container = dialog.get_field("items_html").$wrapper;
-			let rowsHtml = items
-				.map(
-					(it, idx) => `
-				<tr>
-					<td><input type="text" class="form-control input-sm cm-po-item-code" data-idx="${idx}" value="${frappe.utils.escape_html(it.item_code || "")}" placeholder="${__("Item Code / Material")}"></td>
-					<td><input type="number" class="form-control input-sm cm-po-item-qty text-right" data-idx="${idx}" value="${it.qty || 1}" min="1" step="any"></td>
-					<td><input type="text" class="form-control input-sm cm-po-item-uom" data-idx="${idx}" value="${frappe.utils.escape_html(it.stock_uom || "")}" placeholder="${__("UOM")}"></td>
-					<td><input type="number" class="form-control input-sm cm-po-item-rate text-right" data-idx="${idx}" value="${it.rate || 0}" min="0" step="any"></td>
-					<td class="text-right font-weight-bold align-middle cm-po-item-amount">${format_currency((it.qty || 1) * (it.rate || 0))}</td>
-					<td class="text-center align-middle">
-						<button class="btn btn-xs btn-danger cm-po-remove-row" data-idx="${idx}">✕</button>
-					</td>
-				</tr>
-			`
-				)
-				.join("");
+		dialog.add_custom_action(__("Save & Submit"), () => save_po(1), "btn-primary");
+
+		const save_po = (submit) => {
+			const values = dialog.get_values();
+			if (!values) return;
 
 			if (!items.length) {
-				rowsHtml = `<tr><td colspan="6" class="text-center text-muted p-3">${__("No items added yet. Click '+ Add Material Item' below.")}</td></tr>`;
+				frappe.msgprint(__("Please add at least one material item to the Purchase Order."));
+				return;
 			}
 
+			for (let it of items) {
+				if (!it.item_code) {
+					frappe.msgprint(__("Item Code is required for all rows."));
+					return;
+				}
+				if (!it.qty || it.qty <= 0) {
+					frappe.msgprint(__("Quantity must be greater than zero for {0}.").format(it.item_code));
+					return;
+				}
+			}
+
+			frappe.call({
+				method: "construction_management.purchase_orders.create_construction_purchase_order",
+				args: {
+					project: values.project,
+					supplier: values.supplier,
+					required_date: values.required_date,
+					material_request: values.material_request || "",
+					delivery_site: values.delivery_site || "",
+					delivery_contact: values.delivery_contact || "",
+					items: JSON.stringify(items),
+					submit: submit,
+				},
+				freeze: true,
+				freeze_message: submit ? __("Submitting Purchase Order...") : __("Saving Purchase Order..."),
+				callback: (r) => {
+					if (!r.exc && r.message) {
+						dialog.hide();
+						frappe.show_alert({
+							message: __(submit ? "Purchase Order {0} submitted" : "Purchase Order {0} saved as Draft", [r.message.name]),
+							indicator: "green",
+						});
+						this.refresh();
+					}
+				},
+			});
+		};
+
+		const render_dialog_items = () => {
+			const $container = dialog.fields_dict.items_html.$wrapper;
+			$container.empty();
+
+			let rows = items.map((it, idx) => `
+				<tr>
+					<td>
+						<input type="text" class="form-control input-sm cm-po-item-code" data-idx="${idx}" value="${frappe.utils.escape_html(it.item_code || "")}" placeholder="Item Code" />
+					</td>
+					<td>
+						<input type="text" class="form-control input-sm cm-po-item-name" data-idx="${idx}" value="${frappe.utils.escape_html(it.item_name || "")}" placeholder="Item Description" />
+					</td>
+					<td style="width: 100px;">
+						<input type="number" step="any" class="form-control input-sm cm-po-item-qty text-right" data-idx="${idx}" value="${it.qty || 1}" />
+					</td>
+					<td style="width: 100px;">
+						<input type="text" class="form-control input-sm cm-po-item-uom" data-idx="${idx}" value="${frappe.utils.escape_html(it.stock_uom || "Unit")}" />
+					</td>
+					<td style="width: 110px;">
+						<input type="number" step="any" class="form-control input-sm cm-po-item-rate text-right" data-idx="${idx}" value="${it.rate || 0}" />
+					</td>
+					<td class="text-right font-weight-bold cm-po-item-amount" style="width: 120px;">
+						${format_currency((it.qty || 0) * (it.rate || 0))}
+					</td>
+					<td style="width: 40px; text-align: center;">
+						<button class="btn btn-xs btn-default text-danger cm-po-item-del" data-idx="${idx}">×</button>
+					</td>
+				</tr>
+			`).join("");
+
 			$container.html(`
-				<table class="cm-po-items-table">
+				<table class="cm-po-items-table table table-bordered">
 					<thead>
 						<tr>
-							<th style="width: 35%;">${__("Material / Item")}</th>
-							<th style="width: 15%;">${__("Quantity")}</th>
-							<th style="width: 15%;">${__("Unit (UOM)")}</th>
-							<th style="width: 15%;">${__("Rate (₹)")}</th>
-							<th style="width: 15%; text-align: right;">${__("Amount")}</th>
-							<th style="width: 5%;"></th>
+							<th>${__("Item Code")}</th>
+							<th>${__("Item Name")}</th>
+							<th class="text-right">${__("Qty")}</th>
+							<th>${__("UOM")}</th>
+							<th class="text-right">${__("Rate (₹)")}</th>
+							<th class="text-right">${__("Amount (₹)")}</th>
+							<th></th>
 						</tr>
 					</thead>
 					<tbody>
-						${rowsHtml}
+						${rows || `<tr><td colspan="7" class="text-center text-muted p-3">${__("No items added yet.")}</td></tr>`}
 					</tbody>
 				</table>
 				<div class="mt-2">
-					<button class="btn btn-xs btn-default cm-po-add-row">+ ${__("Add Material Item")}</button>
+					<button class="btn btn-xs btn-default cm-po-add-row">+ ${__("Add Item")}</button>
 				</div>
 			`);
 
-			// Bind table interactions
+			// Bind row events
 			$container.find(".cm-po-add-row").on("click", (e) => {
 				e.preventDefault();
-				items.push({ item_code: "", qty: 1, rate: 0, stock_uom: "" });
+				items.push({ item_code: "", item_name: "", qty: 1, rate: 0, stock_uom: "Unit" });
 				render_dialog_items();
 			});
 
-			$container.find(".cm-po-remove-row").on("click", function (e) {
+			$container.find(".cm-po-item-del").on("click", function (e) {
 				e.preventDefault();
-				const idx = $(this).attr("data-idx");
+				const idx = parseInt($(this).attr("data-idx"));
 				items.splice(idx, 1);
 				render_dialog_items();
 			});
@@ -414,6 +486,11 @@ class PurchaseOrderList {
 			$container.find(".cm-po-item-code").on("change", function () {
 				const idx = $(this).attr("data-idx");
 				items[idx].item_code = $(this).val();
+			});
+
+			$container.find(".cm-po-item-name").on("change", function () {
+				const idx = $(this).attr("data-idx");
+				items[idx].item_name = $(this).val();
 			});
 
 			$container.find(".cm-po-item-qty").on("input", function () {
@@ -432,30 +509,32 @@ class PurchaseOrderList {
 				const idx = $(this).attr("data-idx");
 				items[idx].stock_uom = $(this).val();
 			});
-		}
+		};
 
 		function update_row_amount($c, idx, it) {
 			const amt = (it.qty || 0) * (it.rate || 0);
-			$c.find(`tr:eq(${parseInt(idx) + 1}) .cm-po-item-amount`).text(format_currency(amt));
+			$c.find(`tbody tr:eq(${idx}) .cm-po-item-amount`).text(format_currency(amt));
 		}
 
 		// Initialize with one default item row
-		items = [{ item_code: "CM-CEM-001", qty: 100, rate: 380, stock_uom: "Bag" }];
+		items = [{ item_code: "CM-CEM-001", item_name: "OPC Cement 53 Grade", qty: 100, rate: 380, stock_uom: "Bag" }];
 		dialog.show();
 		render_dialog_items();
 	}
 }
 
 function po_status_pill(status) {
+	if (!status) return "";
 	const map = {
-		Draft: "draft",
-		"To Receive and Bill": "in-progress",
-		"To Receive": "in-progress",
-		"To Bill": "warning",
-		Completed: "completed",
-		Cancelled: "delayed",
+		"Draft": "draft",
+		"To Receive and Bill": "to-receive-and-bill",
+		"To Receive": "to-receive",
+		"To Bill": "to-bill",
+		"Completed": "completed",
+		"Cancelled": "cancelled",
+		"Closed": "closed",
 	};
-	const css_class = map[status] || "default";
+	const css_class = map[status] || status.toLowerCase().replace(/\s+/g, "-");
 	return `<span class="cm-status cm-status-${css_class}">${__(status)}</span>`;
 }
 

@@ -100,7 +100,7 @@
   },
   {
    "color": "Grey",
-   "icon": "buying",
+   "icon": "order",
    "label": "Purchase Orders",
    "link_to": "construction-purchase-orders",
    "type": "Page"
@@ -132,3 +132,4 @@
  ],
  "title": "Construction Management"
 }
+

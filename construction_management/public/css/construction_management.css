@@ -43,13 +43,30 @@
 
 .cm-status-draft {
 	background: transparent;
-	color: var(--gray-700);
-	border: 1px dashed var(--gray-400);
+	color: var(--gray-700, #383838);
+	border: 1px dashed var(--gray-400, #a0aec0);
 }
 
+.cm-status-to-receive-and-bill,
+.cm-status-to-receive {
+	background: var(--bg-blue, #e8f4fc);
+	color: var(--blue-700, #0070cc);
+}
+
+.cm-status-to-bill,
 .cm-status-warning {
 	background: var(--bg-orange, #fff4e5);
 	color: var(--orange-700, #b25e00);
+}
+
+.cm-status-cancelled {
+	background: var(--bg-red, #ffebee);
+	color: var(--red-600, #e53e3e);
+}
+
+.cm-status-closed {
+	background: var(--gray-200, #edf2f7);
+	color: var(--gray-600, #718096);
 }
 
 /* Material statuses */
