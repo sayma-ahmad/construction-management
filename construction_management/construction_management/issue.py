@@ -4,9 +4,36 @@
 import json
 
 import frappe
+from frappe import _
 from frappe.utils import cint
 
 from construction_management.construction_management.utils import resolve_erpnext_project
+
+CONSTRUCTION_ISSUE_TYPES = {"Safety", "Quality", "Material", "Equipment", "Design", "Delay", "Other"}
+
+
+def validate_construction_issue(doc, method=None):
+	"""Validate project reference and project access permissions for construction Issues."""
+	roles = set(frappe.get_roles(frappe.session.user))
+	is_construction_context = (
+		doc.get("issue_type") in CONSTRUCTION_ISSUE_TYPES
+		or (bool(roles & {"Projects User", "Projects Manager"}) and "Support Team" not in roles)
+	)
+
+	if not doc.project:
+		if is_construction_context:
+			frappe.throw(_("Project is required for Construction Issues."))
+		return
+
+	if not frappe.db.exists("Project", doc.project):
+		frappe.throw(_("Project {0} does not exist.").format(doc.project))
+
+	if not frappe.flags.in_import and not doc.flags.ignore_permissions:
+		if not frappe.has_permission("Project", "read", doc=doc.project):
+			frappe.throw(
+				_("You do not have permission to access Project {0}.").format(doc.project),
+				frappe.PermissionError,
+			)
 
 
 def _parse_assignees(raw_assign):

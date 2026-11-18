@@ -14,11 +14,28 @@ from construction_management.construction_management.issue import (
 class TestConstructionIssue(FrappeTestCase):
 	"""Tests for reusing ERPNext Issue for Construction Site Issues."""
 
-	def _create_project(self, suffix):
+	def _get_or_create_company(self):
+		company = frappe.db.get_value("Company", {}, "name")
+		if company:
+			return company
+		doc = frappe.get_doc(
+			{
+				"doctype": "Company",
+				"company_name": f"Test Issue Co {frappe.generate_hash(length=4)}",
+				"abbr": f"TI{frappe.generate_hash(length=3).upper()}",
+				"default_currency": "INR",
+				"country": "India",
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		return doc.name
+
+	def _create_project(self, suffix, company=None):
 		doc = frappe.get_doc(
 			{
 				"doctype": "Project",
 				"project_name": f"Test Issue Project {suffix}",
+				"company": company or self._get_or_create_company(),
 			}
 		)
 		doc.insert(ignore_permissions=True)
@@ -242,3 +259,89 @@ class TestConstructionIssue(FrappeTestCase):
 		self.assertTrue(frappe.has_permission("Issue", "create", user=projects_manager))
 		self.assertTrue(frappe.has_permission("Issue", "write", user=projects_manager))
 		self.assertFalse(frappe.has_permission("Issue", "delete", user=projects_manager))
+
+	def test_project_validation_and_create_permissions(self):
+		self._require_issue_fixtures()
+
+		project_a = self._create_project(f"VA-{frappe.generate_hash(length=5)}")
+		project_b = self._create_project(f"VB-{frappe.generate_hash(length=5)}")
+		projects_user = self._create_user_with_role("Projects User")
+		projects_manager = self._create_user_with_role("Projects Manager")
+		unauthorized_user = self._create_user_with_role("Stock User")
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		# Missing Project rejected for construction Issue
+		frappe.set_user(projects_user)
+		missing_proj_issue = self._make_issue(None, issue_type="Safety")
+		self.assertRaises(frappe.ValidationError, missing_proj_issue.insert)
+
+		# Invalid / nonexistent Project rejected
+		invalid_proj_issue = self._make_issue("NONEXISTENT-PROJ-9999", issue_type="Safety")
+		self.assertRaises(frappe.ValidationError, invalid_proj_issue.insert)
+
+		# Unauthorized user (Stock User) cannot create Issue
+		frappe.set_user(unauthorized_user)
+		unauth_issue = self._make_issue(project_a.name, issue_type="Safety")
+		self.assertRaises(frappe.PermissionError, unauth_issue.insert)
+
+		# Projects User with User Permission on project_a cannot create Issue for project_b
+		frappe.set_user("Administrator")
+		frappe.get_doc(
+			{
+				"doctype": "User Permission",
+				"user": projects_user,
+				"allow": "Project",
+				"for_value": project_a.name,
+			}
+		).insert(ignore_permissions=True)
+		frappe.set_user(projects_user)
+		cross_proj_issue = self._make_issue(project_b.name, issue_type="Safety")
+		self.assertRaises(frappe.PermissionError, cross_proj_issue.insert)
+
+		# Authorized Projects User & Projects Manager can create Issue for accessible project_a
+		ok_user_issue = self._make_issue(project_a.name, issue_type="Safety")
+		ok_user_issue.insert()
+		self.assertEqual(ok_user_issue.project, project_a.name)
+
+		frappe.set_user(projects_manager)
+		ok_mgr_issue = self._make_issue(project_a.name, issue_type="Quality")
+		ok_mgr_issue.insert()
+		self.assertEqual(ok_mgr_issue.project, project_a.name)
+
+	def test_update_issue_unauthorized_project_and_get_project_issues_scoping(self):
+		self._require_issue_fixtures()
+
+		project_a = self._create_project(f"UA-{frappe.generate_hash(length=5)}")
+		project_b = self._create_project(f"UB-{frappe.generate_hash(length=5)}")
+		projects_user = self._create_user_with_role("Projects User")
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		issue_a = self._make_issue(project_a.name, issue_type="Safety")
+		issue_a.insert()
+		issue_b = self._make_issue(project_b.name, issue_type="Quality")
+		issue_b.insert()
+
+		frappe.get_doc(
+			{
+				"doctype": "User Permission",
+				"user": projects_user,
+				"allow": "Project",
+				"for_value": project_a.name,
+			}
+		).insert(ignore_permissions=True)
+
+		frappe.set_user(projects_user)
+
+		# Updating an existing Issue to reference an unauthorized Project is rejected
+		editable_issue = frappe.get_doc("Issue", issue_a.name)
+		editable_issue.project = project_b.name
+		self.assertRaises(frappe.PermissionError, editable_issue.save)
+
+		# get_project_issues returns accessible Project's issues and hides restricted Project
+		res_a = get_project_issues(project_name=project_a.project_name)
+		self.assertEqual(res_a["mapped_project"], project_a.name)
+		self.assertEqual([r["name"] for r in res_a["issues"]], [issue_a.name])
+
+		res_b = get_project_issues(project_name=project_b.project_name)
+		self.assertIsNone(res_b["mapped_project"])
+		self.assertEqual(res_b["issues"], [])

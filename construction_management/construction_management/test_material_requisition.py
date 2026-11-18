@@ -2,6 +2,7 @@
 # See license.txt
 
 import frappe
+from erpnext.stock.doctype.material_request.material_request import update_status as mr_update_status
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate
 
@@ -63,6 +64,7 @@ class TestMaterialRequisition(FrappeTestCase):
 				"item_code": f"CM-MAT-{frappe.generate_hash(length=6)}",
 				"item_name": "Test Cement Bag",
 				"item_group": item_group,
+				"cm_material_type": "Civil",
 				"stock_uom": uom,
 				"is_stock_item": 1,
 			}
@@ -197,15 +199,30 @@ class TestMaterialRequisition(FrappeTestCase):
 
 	def test_custom_requested_by_set_server_side_and_validated(self):
 		project = self._create_project(frappe.generate_hash(length=6))
-		mr = self._make_mr(custom_project=project.name)
-		validate_construction_material_request(mr)
-		self.assertEqual(mr.get("custom_requested_by"), frappe.session.user)
+		impersonated_user = self._create_user_with_role("Projects Manager")
+		ordinary_user = self._create_user_with_role("Projects User")
+		self.addCleanup(frappe.set_user, "Administrator")
 
-		mr_invalid = self._make_mr(
+		# Ordinary user cannot spoof custom_requested_by on create or modify after create
+		frappe.set_user(ordinary_user)
+		mr = self._make_mr(
 			custom_project=project.name,
-			custom_requested_by="nonexistent_user_12345@example.com",
+			custom_requested_by=impersonated_user,
 		)
-		self.assertRaises(frappe.ValidationError, validate_construction_material_request, mr_invalid)
+		mr.insert()
+		self.assertEqual(mr.get("custom_requested_by"), ordinary_user)
+
+		mr.custom_requested_by = impersonated_user
+		self.assertRaises(frappe.PermissionError, mr.save)
+
+		# Administrator / System Manager creation also records actual session user
+		frappe.set_user("Administrator")
+		mr_admin = self._make_mr(
+			custom_project=project.name,
+			custom_requested_by=ordinary_user,
+		)
+		mr_admin.insert()
+		self.assertEqual(mr_admin.get("custom_requested_by"), "Administrator")
 
 	def test_standard_non_construction_mr_works(self):
 		mr = self._make_mr()
@@ -219,6 +236,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		self._require_migrated_fields()
 
 		project = self._create_project(frappe.generate_hash(length=6))
+		other_project = self._create_project(f"OTHER-{frappe.generate_hash(length=5)}")
 		mr_1 = self._make_mr(
 			custom_project=project.name,
 			custom_site_location="North Tower",
@@ -236,6 +254,14 @@ class TestMaterialRequisition(FrappeTestCase):
 		)
 		mr_2.insert()
 
+		mr_other = self._make_mr(
+			custom_project=other_project.name,
+			custom_site_location="East Wing",
+			custom_priority="Urgent",
+			transaction_date="2026-11-10",
+		)
+		mr_other.insert()
+
 		filtered = get_material_requisition_list(
 			filters={
 				"project": project.name,
@@ -246,6 +272,10 @@ class TestMaterialRequisition(FrappeTestCase):
 		)
 		self.assertEqual(filtered["total"], 1)
 		self.assertEqual(filtered["records"][0]["name"], mr_1.name)
+
+		by_project = get_material_requisition_list(filters={"project": project.name})
+		self.assertEqual(by_project["total"], 2)
+		self.assertNotIn(mr_other.name, {r["name"] for r in by_project["records"]})
 
 		searched = get_material_requisition_list(search="North Tower")
 		self.assertEqual(searched["total"], 1)
@@ -291,13 +321,17 @@ class TestMaterialRequisition(FrappeTestCase):
 		projects_manager = self._create_user_with_role("Projects Manager")
 		self.addCleanup(frappe.set_user, "Administrator")
 
-		# Projects User can create and submit, but cannot delete, cancel, or amend
+		# Projects User can create and submit own MR, cannot read/modify/submit others' MRs, and cannot delete/cancel/amend
 		frappe.set_user(projects_user)
 		self.assertTrue(frappe.has_permission("Material Request", "create", user=projects_user))
-		self.assertTrue(frappe.has_permission("Material Request", "submit", user=projects_user))
 		self.assertFalse(frappe.has_permission("Material Request", "delete", user=projects_user))
 		self.assertFalse(frappe.has_permission("Material Request", "cancel", user=projects_user))
 		self.assertFalse(frappe.has_permission("Material Request", "amend", user=projects_user))
+
+		# Cannot modify or submit another user's Material Request
+		other_mr = frappe.get_doc("Material Request", mr_a.name)
+		self.assertRaises(frappe.PermissionError, other_mr.save)
+		self.assertRaises(frappe.PermissionError, other_mr.submit)
 
 		# Neither role gets write/create/delete on Item master data
 		self.assertTrue(frappe.has_permission("Item", "read", user=projects_user))
@@ -307,26 +341,28 @@ class TestMaterialRequisition(FrappeTestCase):
 
 		mr_user = self._make_mr(custom_project=project_a.name)
 		mr_user.insert()
+		self.assertTrue(frappe.has_permission("Material Request", "submit", doc=mr_user, user=projects_user))
 		mr_user.submit()
 		self.assertEqual(mr_user.docstatus, 1)
 
-		# Without User Permission scoping, Projects User sees all Material Requests
-		unscoped = get_material_requisition_list()
-		unscoped_names = {r["name"] for r in unscoped["records"]}
-		self.assertIn(mr_a.name, unscoped_names)
-		self.assertIn(mr_b.name, unscoped_names)
+		# With if_owner=1, Projects User sees only own MRs in get_material_requisition_list
+		own_only = get_material_requisition_list()
+		own_names = {r["name"] for r in own_only["records"]}
+		self.assertIn(mr_user.name, own_names)
+		self.assertNotIn(mr_a.name, own_names)
+		self.assertNotIn(mr_b.name, own_names)
 
-		# With User Permission on Project, get_material_requisition_list respects Project access
+		# Projects Manager sees all projects unless restricted by User Permission
 		frappe.set_user("Administrator")
 		frappe.get_doc(
 			{
 				"doctype": "User Permission",
-				"user": projects_user,
+				"user": projects_manager,
 				"allow": "Project",
 				"for_value": project_a.name,
 			}
 		).insert(ignore_permissions=True)
-		frappe.set_user(projects_user)
+		frappe.set_user(projects_manager)
 		scoped = get_material_requisition_list()
 		scoped_names = {r["name"] for r in scoped["records"]}
 		self.assertIn(mr_a.name, scoped_names)
@@ -396,3 +432,163 @@ class TestMaterialRequisition(FrappeTestCase):
 		self.assertEqual(proj_res["mapped_project"], project.name)
 		self.assertEqual(len(proj_res["material_requests"]), 1)
 		self.assertEqual(proj_res["material_requests"][0]["name"], mr_child_only.name)
+
+	def test_quantity_validation_and_status_flow(self):
+		project = self._create_project(frappe.generate_hash(length=6))
+
+		# Zero, negative, missing, and invalid quantities rejected
+		for bad_qty in (0, -5, None, "abc"):
+			mr_bad = self._make_mr(custom_project=project.name)
+			mr_bad.items[0].qty = bad_qty
+			self.assertRaises((frappe.ValidationError, ValueError, TypeError), mr_bad.insert)
+
+		# Positive decimal quantity accepted when Item UOM allows fractions
+		frac_uom = f"CMKg-{frappe.generate_hash(length=4)}"
+		frappe.get_doc(
+			{"doctype": "UOM", "uom_name": frac_uom, "must_be_whole_number": 0}
+		).insert(ignore_permissions=True)
+		item_group = frappe.db.get_value("Item Group", {"is_group": 0}, "name") or "All Item Groups"
+		frac_item = frappe.get_doc(
+			{
+				"doctype": "Item",
+				"item_code": f"CM-FRAC-{frappe.generate_hash(length=6)}",
+				"item_name": "Test Sand Ton",
+				"item_group": item_group,
+				"cm_material_type": "Consumable",
+				"stock_uom": frac_uom,
+				"is_stock_item": 1,
+			}
+		).insert(ignore_permissions=True)
+		mr_decimal = self._make_mr(custom_project=project.name)
+		mr_decimal.items[0].item_code = frac_item.name
+		mr_decimal.items[0].uom = frac_uom
+		mr_decimal.items[0].stock_uom = frac_uom
+		mr_decimal.items[0].qty = 2.5
+		mr_decimal.insert()
+		self.assertEqual(mr_decimal.items[0].qty, 2.5)
+
+		# Valid positive integer quantity and status lifecycle: Draft -> Pending -> Stopped -> Pending -> Cancelled
+		mr_valid = self._make_mr(custom_project=project.name)
+		mr_valid.items[0].qty = 12
+		mr_valid.insert()
+		self.assertEqual(mr_valid.docstatus, 0)
+		self.assertEqual(mr_valid.status, "Draft")
+
+		# Cannot stop a Draft Material Request
+		self.assertRaises(frappe.InvalidStatusError, mr_valid.update_status, "Stopped")
+
+		mr_valid.submit()
+		mr_valid.reload()
+		self.assertEqual(mr_valid.docstatus, 1)
+		self.assertEqual(mr_valid.status, "Pending")
+
+		# Supported ERPNext status transitions: Pending -> Stopped -> Pending
+		mr_valid.update_status("Stopped")
+		mr_valid.reload()
+		self.assertEqual(mr_valid.status, "Stopped")
+
+		mr_valid.update_status("Pending")
+		mr_valid.reload()
+		self.assertEqual(mr_valid.status, "Pending")
+
+		# Projects User cannot cancel submitted MR
+		projects_user = self._create_user_with_role("Projects User")
+		self.addCleanup(frappe.set_user, "Administrator")
+		frappe.set_user(projects_user)
+		mr_user_view = frappe.get_doc("Material Request", mr_valid.name)
+		self.assertRaises(frappe.PermissionError, mr_user_view.cancel)
+
+		# Administrator / Manager can cancel -> status becomes Cancelled; cannot reopen Cancelled MR
+		frappe.set_user("Administrator")
+		mr_valid.cancel()
+		mr_valid.reload()
+		self.assertEqual(mr_valid.docstatus, 2)
+		self.assertEqual(mr_valid.status, "Cancelled")
+		self.assertRaises(frappe.InvalidStatusError, mr_valid.update_status, "Pending")
+
+	def test_native_update_status_permissions(self):
+		self._require_migrated_fields()
+
+		project = self._create_project(frappe.generate_hash(length=6))
+		projects_user = self._create_user_with_role("Projects User")
+		projects_manager = self._create_user_with_role("Projects Manager")
+		read_only_user = self._create_user_with_role("Manufacturing Manager")
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		# MR created by Administrator (not owned by projects_user)
+		mr_admin = self._make_mr(custom_project=project.name)
+		mr_admin.insert()
+		mr_admin.submit()
+
+		# Projects User cannot call native update_status on another user's MR
+		frappe.set_user(projects_user)
+		self.assertRaises(frappe.PermissionError, mr_update_status, mr_admin.name, "Stopped")
+
+		# Projects User CAN call native update_status on their own submitted MR
+		mr_own = self._make_mr(custom_project=project.name)
+		mr_own.insert()
+		mr_own.submit()
+		mr_update_status(mr_own.name, "Stopped")
+		mr_own.reload()
+		self.assertEqual(mr_own.status, "Stopped")
+
+		# Read-only role (Manufacturing Manager) cannot change status via update_status
+		frappe.set_user(read_only_user)
+		self.assertRaises(frappe.PermissionError, mr_update_status, mr_admin.name, "Stopped")
+
+		# Projects Manager CAN stop and reopen any permitted MR via native update_status
+		frappe.set_user(projects_manager)
+		mr_update_status(mr_admin.name, "Stopped")
+		mr_admin.reload()
+		self.assertEqual(mr_admin.status, "Stopped")
+
+		mr_update_status(mr_admin.name, "Pending")
+		mr_admin.reload()
+		self.assertEqual(mr_admin.status, "Pending")
+
+	def test_mixed_parent_and_child_project_filtering(self):
+		self._require_migrated_fields()
+
+		company = self._get_or_create_company()
+		warehouse = self._get_or_create_warehouse(company)
+		item = self._get_or_create_item()
+		schedule_date = add_days(nowdate(), 3)
+		project_a = self._create_project(f"MA-{frappe.generate_hash(length=5)}", company=company)
+		project_b = self._create_project(f"MB-{frappe.generate_hash(length=5)}", company=company)
+
+		mr_parent = self._make_mr(custom_project=project_a.name)
+		mr_parent.insert()
+
+		mr_child = frappe.get_doc(
+			{
+				"doctype": "Material Request",
+				"material_request_type": "Purchase",
+				"company": company,
+				"transaction_date": nowdate(),
+				"schedule_date": schedule_date,
+				"items": [
+					{
+						"item_code": item,
+						"qty": 4,
+						"schedule_date": schedule_date,
+						"warehouse": warehouse,
+						"project": project_a.name,
+					}
+				],
+			}
+		)
+		mr_child.insert()
+
+		mr_other = self._make_mr(custom_project=project_b.name)
+		mr_other.insert()
+
+		list_res = get_material_requisition_list(filters={"project": project_a.name})
+		listed_names = {r["name"] for r in list_res["records"]}
+		self.assertEqual(list_res["total"], 2)
+		self.assertEqual(listed_names, {mr_parent.name, mr_child.name})
+		self.assertNotIn(mr_other.name, listed_names)
+
+		proj_res = get_project_material_requests(project_name=project_a.project_name)
+		proj_names = {r["name"] for r in proj_res["material_requests"]}
+		self.assertEqual(proj_res["mapped_project"], project_a.name)
+		self.assertEqual(proj_names, {mr_parent.name, mr_child.name})

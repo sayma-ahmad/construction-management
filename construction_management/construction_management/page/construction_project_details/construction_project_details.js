@@ -21,24 +21,6 @@ const CM_PROJECT_MATERIALS_METHOD =
 const CM_PROJECT_ISSUES_METHOD =
 	"construction_management.construction_management.issue.get_project_issues";
 
-const CM_PROJECT_PLACEHOLDERS = {
-	dpr: {
-		icon: "today",
-		title: "Daily Progress Reports",
-		text: "Daily progress reports submitted from site will appear here.",
-	},
-	issues: {
-		icon: "solid-warning",
-		title: "Site Issues",
-		text: "Issues raised on site for this project will appear here.",
-	},
-	materials: {
-		icon: "stock",
-		title: "Materials",
-		text: "Material requests, receipts and stock for this project will appear here.",
-	},
-};
-
 frappe.pages["construction-project-details"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
@@ -108,13 +90,10 @@ class ProjectDetails {
 
 			<div class="cm-pd-panel" data-panel="overview">${this.overview_panel()}</div>
 			<div class="cm-pd-panel" data-panel="tasks"></div>
-			<div class="cm-pd-panel" data-panel="phases">${this.phases_panel()}</div>
+			<div class="cm-pd-panel" data-panel="phases"></div>
 			<div class="cm-pd-panel" data-panel="dpr">${this.dpr_loading_panel()}</div>
 			<div class="cm-pd-panel" data-panel="issues">${this.issues_loading_panel()}</div>
 			<div class="cm-pd-panel" data-panel="materials">${this.materials_loading_panel()}</div>
-			${Object.keys(CM_PROJECT_PLACEHOLDERS)
-				.map((key) => `<div class="cm-pd-panel" data-panel="${key}">${this.placeholder_panel(key)}</div>`)
-				.join("")}
 		`);
 		this._dprs_loaded = false;
 		this._dprs_loading = false;
@@ -254,17 +233,6 @@ class ProjectDetails {
 						<div class="cm-pd-field-value">${current_phase ? __(current_phase.name) : __("All phases complete")}</div>
 					</div>
 				</div>
-			</div>
-		`;
-	}
-
-	placeholder_panel(key) {
-		const placeholder = CM_PROJECT_PLACEHOLDERS[key];
-		return `
-			<div class="cm-pd-card cm-pd-empty">
-				<div class="cm-pd-empty-icon">${frappe.utils.icon(placeholder.icon, "lg")}</div>
-				<div class="cm-pd-empty-title">${__(placeholder.title)}</div>
-				<div class="cm-pd-empty-text">${__(placeholder.text)}</div>
 			</div>
 		`;
 	}
@@ -670,19 +638,6 @@ class ProjectDetails {
 			.on("click", () => frappe.new_doc("Issue", { project: mapped_project }));
 		$panel.on("click", "tbody tr[data-dpr]", (e) => {
 			frappe.set_route("Form", "Issue", $(e.currentTarget).attr("data-dpr"));
-		});
-	}
-
-	// Splits overall progress evenly across the standard construction phases.
-	get_phases() {
-		const phases = construction_management.PROJECT_PHASES;
-		const share = 100 / phases.length;
-
-		return phases.map((name, index) => {
-			const done = (this.project.progress - index * share) / share;
-			const percent = Math.round(Math.min(Math.max(done, 0), 1) * 100);
-			const status = percent >= 100 ? "Completed" : percent > 0 ? "In Progress" : "Not Started";
-			return { name, percent, status };
 		});
 	}
 

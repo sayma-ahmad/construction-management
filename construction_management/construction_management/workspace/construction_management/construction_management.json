@@ -12,7 +12,7 @@
    "is_hidden": 0,
    "label": "Construction Management",
    "links": [],
-   "modified": "2026-11-17 10:00:00.000000",
+   "modified": "2026-11-18 06:06:00.000000",
    "modified_by": "Administrator",
    "module": "Construction Management",
    "name": "Construction Management",
@@ -55,7 +55,6 @@
       },
       {
          "color": "Grey",
-         "doc_view": "List",
          "icon": "today",
          "label": "Daily Progress Reports",
          "link_to": "daily-progress-reports",
@@ -63,11 +62,10 @@
       },
       {
          "color": "Grey",
-         "doc_view": "List",
          "icon": "solid-warning",
          "label": "Issues",
-         "link_to": "Issue",
-         "type": "DocType"
+         "link_to": "construction-issues",
+         "type": "Page"
       },
       {
          "color": "Grey",
@@ -93,11 +91,10 @@
       },
       {
          "color": "Grey",
-         "doc_view": "List",
          "icon": "file",
          "label": "Material Requests",
-         "link_to": "Material Request",
-         "type": "DocType"
+         "link_to": "material-requisitions",
+         "type": "Page"
       },
       {
          "color": "Grey",

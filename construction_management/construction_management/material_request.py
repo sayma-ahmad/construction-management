@@ -5,14 +5,18 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, flt
 
 from construction_management.construction_management.utils import resolve_erpnext_project
 
 
 def validate_construction_material_request(doc, method=None):
-	"""Validate construction-specific fields and project consistency on Material Request."""
+	"""Validate construction-specific fields, quantities, and project consistency on Material Request."""
 	_set_and_validate_requested_by(doc)
+
+	for row in doc.get("items") or []:
+		if flt(row.get("qty")) <= 0:
+			frappe.throw(_("Row #{0}: Quantity must be greater than 0.").format(row.idx))
 
 	custom_project = doc.get("custom_project")
 	custom_task = doc.get("custom_task")
@@ -59,22 +63,17 @@ def validate_construction_material_request(doc, method=None):
 
 
 def _set_and_validate_requested_by(doc):
-	"""Ensure custom_requested_by defaults to the creating user and cannot be forged."""
-	requested_by = doc.get("custom_requested_by")
+	"""Always set custom_requested_by from session user on creation and prevent tampering."""
 	if doc.is_new():
-		if not requested_by:
-			doc.set("custom_requested_by", frappe.session.user)
-		elif not frappe.db.exists("User", requested_by):
-			frappe.throw(_("Requested By user {0} does not exist.").format(requested_by))
-	else:
-		if not requested_by:
-			previous = doc.get_doc_before_save()
-			doc.set(
-				"custom_requested_by",
-				(previous.get("custom_requested_by") if previous else None) or doc.owner or frappe.session.user,
-			)
-		elif not frappe.db.exists("User", requested_by):
-			frappe.throw(_("Requested By user {0} does not exist.").format(requested_by))
+		doc.set("custom_requested_by", frappe.session.user)
+		return
+
+	previous = doc.get_doc_before_save()
+	if previous and doc.get("custom_requested_by") != previous.get("custom_requested_by"):
+		frappe.throw(
+			_("Requested By cannot be changed after creation."),
+			frappe.PermissionError,
+		)
 
 
 def _get_project_matched_mr_names(project):
@@ -88,21 +87,15 @@ def _get_project_matched_mr_names(project):
 		)
 	)
 
-	permitted_parents = frappe.get_list(
-		"Material Request",
-		pluck="name",
-		limit_page_length=0,
-	)
-	child_matches = set()
-	if permitted_parents:
-		child_matches = set(
-			frappe.get_all(
-				"Material Request Item",
-				filters={"parent": ["in", permitted_parents], "project": project},
-				pluck="parent",
-				distinct=True,
-			)
+	child_matches = set(
+		frappe.get_list(
+			"Material Request",
+			filters=[["Material Request Item", "project", "=", project]],
+			pluck="name",
+			distinct=True,
+			limit_page_length=0,
 		)
+	)
 
 	return list(parent_matches | child_matches)
 

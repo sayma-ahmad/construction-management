@@ -143,11 +143,13 @@ after_migrate = "construction_management.materials.setup"
 doc_events = {
 	"Item": {
 		"validate": "construction_management.materials.validate_item",
-	}
-}
+	},
 	"Material Request": {
 		"validate": "construction_management.construction_management.material_request.validate_construction_material_request",
-	}
+	},
+	"Issue": {
+		"validate": "construction_management.construction_management.issue.validate_construction_issue",
+	},
 }
 
 fixtures = [
