@@ -238,11 +238,13 @@
 	border-bottom: none;
 }
 
-.cm-pd-dpr-table tbody tr[data-dpr] {
+.cm-pd-dpr-table tbody tr[data-dpr],
+.cm-pd-dpr-table tbody tr[data-work-order] {
 	cursor: pointer;
 }
 
-.cm-pd-dpr-table tbody tr[data-dpr]:hover {
+.cm-pd-dpr-table tbody tr[data-dpr]:hover,
+.cm-pd-dpr-table tbody tr[data-work-order]:hover {
 	background: var(--highlight-color);
 }
 
