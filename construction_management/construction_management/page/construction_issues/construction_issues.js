@@ -10,7 +10,7 @@ frappe.pages["construction-issues"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
-	page.set_primary_action(__("New Issue"), () => frappe.new_doc("Issue"), "add");
+	sync_issue_primary_action(page);
 	page.set_secondary_action(__("Refresh"), () => wrapper.issue_list?.fetch());
 
 	frappe.require(CM_ISSUES_PAGE_ASSETS, () => {
@@ -20,9 +20,18 @@ frappe.pages["construction-issues"].on_page_load = function (wrapper) {
 
 frappe.pages["construction-issues"].on_page_show = function (wrapper) {
 	if (wrapper.issue_list) {
+		sync_issue_primary_action(wrapper.issue_list.page);
 		wrapper.issue_list.fetch();
 	}
 };
+
+function sync_issue_primary_action(page) {
+	if (frappe.model.can_create("Issue")) {
+		page.set_primary_action(__("New Issue"), () => frappe.new_doc("Issue"), "add");
+	} else {
+		page.clear_primary_action();
+	}
+}
 
 class ConstructionIssueList {
 	constructor(page) {

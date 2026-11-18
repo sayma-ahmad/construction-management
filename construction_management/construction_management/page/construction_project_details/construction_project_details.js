@@ -448,8 +448,8 @@ class ProjectDetails {
 						? frappe.datetime.str_to_user(row.transaction_date)
 						: "";
 					return `
-							<tr data-dpr="${esc(row.name)}" title="${__("Open Material Request")}">
-								<td class="cm-pd-dpr-id">${esc(row.name)}</td>
+							<tr data-material-request="${esc(row.name)}" title="${__("Open Material Request")}">
+								<td class="cm-pd-mr-id">${esc(row.name)}</td>
 								<td>${esc(tx_date)}</td>
 								<td>${esc(row.material_request_type || "")}</td>
 								<td>${esc(row.custom_priority || "")}</td>
@@ -463,17 +463,19 @@ class ProjectDetails {
 				"No Material Requisitions recorded for this project yet."
 			)}</td></tr>`;
 
+		const can_create_mr = frappe.model.can_create("Material Request");
+
 		$panel.html(`
 			<div class="cm-pd-card">
-				<div class="cm-pd-dpr-header">
+				<div class="cm-pd-mr-header">
 					<div class="cm-pd-card-title">${__("Material Requisitions")}</div>
-					<div class="cm-pd-dpr-actions">
+					<div class="cm-pd-mr-actions">
 						<button class="btn btn-xs btn-default cm-pd-open-mrs">${__("View All")}</button>
-						<button class="btn btn-xs btn-primary cm-pd-new-mr">${__("New Material Request")}</button>
+						${can_create_mr ? `<button class="btn btn-xs btn-primary cm-pd-new-mr">${__("New Material Request")}</button>` : ""}
 					</div>
 				</div>
-				<div class="cm-pd-dpr-table-wrap">
-					<table class="cm-pd-dpr-table">
+				<div class="cm-pd-mr-table-wrap">
+					<table class="cm-pd-mr-table">
 						<thead>
 							<tr>
 								<th>${__("Material Request ID")}</th>
@@ -493,12 +495,20 @@ class ProjectDetails {
 		$panel
 			.find(".cm-pd-open-mrs")
 			.on("click", () => frappe.set_route("material-requisitions"));
+		if (can_create_mr) {
+			$panel
+				.find(".cm-pd-new-mr")
+				.on("click", () => frappe.new_doc("Material Request", { cm_project: mapped_project }));
+		}
 		$panel
-			.find(".cm-pd-new-mr")
-			.on("click", () => frappe.new_doc("Material Request", { custom_project: mapped_project }));
-		$panel.on("click", "tbody tr[data-dpr]", (e) => {
-			frappe.set_route("Form", "Material Request", $(e.currentTarget).attr("data-dpr"));
-		});
+			.off("click", "tbody tr[data-material-request]")
+			.on("click", "tbody tr[data-material-request]", (e) => {
+				frappe.set_route(
+					"Form",
+					"Material Request",
+					$(e.currentTarget).attr("data-material-request")
+				);
+			});
 	}
 
 	issues_loading_panel() {
@@ -583,8 +593,8 @@ class ProjectDetails {
 						? row.assigned_to.join(", ")
 						: __("Unassigned");
 					return `
-							<tr data-dpr="${esc(row.name)}" title="${__("Open Issue")}">
-								<td class="cm-pd-dpr-id">${esc(row.name)}</td>
+							<tr data-issue="${esc(row.name)}" title="${__("Open Issue")}">
+								<td class="cm-pd-issue-id">${esc(row.name)}</td>
 								<td>${esc(row.subject || "")}</td>
 								<td>${esc(row.issue_type || "")}</td>
 								<td>${priority
@@ -602,17 +612,19 @@ class ProjectDetails {
 				"No Construction Issues recorded for this project yet."
 			)}</td></tr>`;
 
+		const can_create_issue = frappe.model.can_create("Issue");
+
 		$panel.html(`
 			<div class="cm-pd-card">
-				<div class="cm-pd-dpr-header">
+				<div class="cm-pd-issue-header">
 					<div class="cm-pd-card-title">${__("Construction Issues")}</div>
-					<div class="cm-pd-dpr-actions">
+					<div class="cm-pd-issue-actions">
 						<button class="btn btn-xs btn-default cm-pd-open-issues">${__("View All")}</button>
-						<button class="btn btn-xs btn-primary cm-pd-new-issue">${__("New Issue")}</button>
+						${can_create_issue ? `<button class="btn btn-xs btn-primary cm-pd-new-issue">${__("New Issue")}</button>` : ""}
 					</div>
 				</div>
-				<div class="cm-pd-dpr-table-wrap">
-					<table class="cm-pd-dpr-table">
+				<div class="cm-pd-issue-table-wrap">
+					<table class="cm-pd-issue-table">
 						<thead>
 							<tr>
 								<th>${__("Issue ID")}</th>
@@ -633,12 +645,16 @@ class ProjectDetails {
 		$panel
 			.find(".cm-pd-open-issues")
 			.on("click", () => frappe.set_route("construction-issues"));
+		if (can_create_issue) {
+			$panel
+				.find(".cm-pd-new-issue")
+				.on("click", () => frappe.new_doc("Issue", { project: mapped_project }));
+		}
 		$panel
-			.find(".cm-pd-new-issue")
-			.on("click", () => frappe.new_doc("Issue", { project: mapped_project }));
-		$panel.on("click", "tbody tr[data-dpr]", (e) => {
-			frappe.set_route("Form", "Issue", $(e.currentTarget).attr("data-dpr"));
-		});
+			.off("click", "tbody tr[data-issue]")
+			.on("click", "tbody tr[data-issue]", (e) => {
+				frappe.set_route("Form", "Issue", $(e.currentTarget).attr("data-issue"));
+			});
 	}
 
 	stat_card(label, value, note) {

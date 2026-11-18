@@ -352,7 +352,7 @@
 	}
 }
 
-/* Material Request & Daily Progress Report status pills */
+/* Consolidated status pills (DPR, Material Request, Issue & Purchase Order) */
 .cm-status-draft {
 	background: transparent;
 	color: var(--gray-700);
@@ -360,14 +360,19 @@
 }
 
 .cm-status-submitted,
-.cm-status-pending {
+.cm-status-pending,
+.cm-status-replied,
+.cm-status-to-receive-and-bill,
+.cm-status-to-receive {
 	background: var(--bg-blue);
 	color: var(--blue-700);
 }
 
 .cm-status-partially-ordered,
 .cm-status-partially-received,
-.cm-status-revision-requested {
+.cm-status-revision-requested,
+.cm-status-to-bill,
+.cm-status-warning {
 	background: var(--bg-orange);
 	color: var(--orange-700);
 }
@@ -376,7 +381,8 @@
 .cm-status-issued,
 .cm-status-transferred,
 .cm-status-received,
-.cm-status-approved {
+.cm-status-approved,
+.cm-status-resolved {
 	background: var(--bg-green);
 	color: var(--green-700);
 }
@@ -385,17 +391,6 @@
 .cm-status-cancelled {
 	background: var(--gray-200);
 	color: var(--gray-600);
-}
-
-/* Issue status & priority pills */
-.cm-status-replied {
-	background: var(--bg-blue);
-	color: var(--blue-700);
-}
-
-.cm-status-resolved {
-	background: var(--bg-green);
-	color: var(--green-700);
 }
 
 .cm-status-closed {

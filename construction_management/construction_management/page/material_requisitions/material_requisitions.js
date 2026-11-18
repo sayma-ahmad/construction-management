@@ -10,7 +10,7 @@ frappe.pages["material-requisitions"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
-	page.set_primary_action(__("New Material Request"), () => frappe.new_doc("Material Request"), "add");
+	sync_mr_primary_action(page);
 	page.set_secondary_action(__("Refresh"), () => wrapper.mr_list?.fetch());
 
 	frappe.require(CM_MR_PAGE_ASSETS, () => {
@@ -20,9 +20,22 @@ frappe.pages["material-requisitions"].on_page_load = function (wrapper) {
 
 frappe.pages["material-requisitions"].on_page_show = function (wrapper) {
 	if (wrapper.mr_list) {
+		sync_mr_primary_action(wrapper.mr_list.page);
 		wrapper.mr_list.fetch();
 	}
 };
+
+function sync_mr_primary_action(page) {
+	if (frappe.model.can_create("Material Request")) {
+		page.set_primary_action(
+			__("New Material Request"),
+			() => frappe.new_doc("Material Request"),
+			"add"
+		);
+	} else {
+		page.clear_primary_action();
+	}
+}
 
 class MaterialRequisitionList {
 	constructor(page) {
@@ -276,7 +289,7 @@ class MaterialRequisitionList {
 
 		const rows = records
 			.map((row) => {
-				const project_label = row.project || row.custom_project || "";
+				const project_label = row.project || row.cm_project || "";
 				const status = row.status || "Draft";
 				const status_class = status.toLowerCase().replace(/\s+/g, "-");
 				const tx_date = row.transaction_date ? frappe.datetime.str_to_user(row.transaction_date) : "";

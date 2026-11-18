@@ -14,14 +14,10 @@ CONSTRUCTION_ISSUE_TYPES = {"Safety", "Quality", "Material", "Equipment", "Desig
 
 def validate_construction_issue(doc, method=None):
 	"""Validate project reference and project access permissions for construction Issues."""
-	roles = set(frappe.get_roles(frappe.session.user))
-	is_construction_context = (
-		doc.get("issue_type") in CONSTRUCTION_ISSUE_TYPES
-		or (bool(roles & {"Projects User", "Projects Manager"}) and "Support Team" not in roles)
-	)
+	is_construction_issue = doc.get("issue_type") in CONSTRUCTION_ISSUE_TYPES
 
 	if not doc.project:
-		if is_construction_context:
+		if is_construction_issue:
 			frappe.throw(_("Project is required for Construction Issues."))
 		return
 

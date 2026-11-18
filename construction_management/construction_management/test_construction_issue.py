@@ -345,3 +345,56 @@ class TestConstructionIssue(FrappeTestCase):
 		res_b = get_project_issues(project_name=project_b.project_name)
 		self.assertIsNone(res_b["mapped_project"])
 		self.assertEqual(res_b["issues"], [])
+
+	def test_support_issues_allowed_without_project_while_construction_issues_enforce_project(self):
+		self._require_issue_fixtures()
+
+		project = self._create_project(f"SUP-{frappe.generate_hash(length=5)}")
+		projects_user = self._create_user_with_role("Projects User")
+		support_user = self._create_user_with_role("Support Team")
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		non_construction_type = f"Billing Inquiry {frappe.generate_hash(length=4)}"
+		frappe.get_doc({"doctype": "Issue Type", "name": non_construction_type}).insert(
+			ignore_permissions=True
+		)
+
+		# Projects User can create and update a regular Support Issue without a Project
+		frappe.set_user(projects_user)
+		proj_support_issue = self._make_issue(None, subject="General ERP Support Request")
+		proj_support_issue.insert()
+		self.assertIsNone(proj_support_issue.project)
+
+		proj_support_issue.subject = "Updated ERP Support Request"
+		proj_support_issue.save()
+		self.assertEqual(proj_support_issue.subject, "Updated ERP Support Request")
+
+		# Projects User can also create non-construction Issue Type without a Project
+		non_cm_issue = self._make_issue(
+			None, subject="Billing Question", issue_type=non_construction_type
+		)
+		non_cm_issue.insert()
+		self.assertEqual(non_cm_issue.issue_type, non_construction_type)
+
+		# Support Team retains existing support workflow (without Project, and with accessible Project)
+		frappe.set_user(support_user)
+		self.assertTrue(frappe.has_permission("Issue", "create", user=support_user))
+		self.assertTrue(frappe.has_permission("Issue", "delete", user=support_user))
+		support_issue = self._make_issue(None, subject="Support Team Ticket")
+		support_issue.insert()
+		self.assertIsNone(support_issue.project)
+
+		# Construction Issue Types still require a valid Project even for Support Team
+		support_cm_missing_proj = self._make_issue(None, issue_type="Safety")
+		self.assertRaises(frappe.ValidationError, support_cm_missing_proj.insert)
+
+		# Updating an existing Construction Issue cannot clear Project
+		frappe.set_user(projects_user)
+		cm_issue = self._make_issue(project.name, issue_type="Safety")
+		cm_issue.insert()
+		cm_issue.subject = "Updated Scaffolding Safety Issue"
+		cm_issue.save()
+		self.assertEqual(cm_issue.subject, "Updated Scaffolding Safety Issue")
+
+		cm_issue.project = None
+		self.assertRaises(frappe.ValidationError, cm_issue.save)

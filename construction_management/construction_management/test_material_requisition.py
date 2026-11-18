@@ -1,6 +1,9 @@
 # Copyright (c) 2026, TechnoTribes and contributors
 # See license.txt
 
+import json
+from pathlib import Path
+
 import frappe
 from erpnext.stock.doctype.material_request.material_request import update_status as mr_update_status
 from frappe.tests.utils import FrappeTestCase
@@ -9,7 +12,11 @@ from frappe.utils import add_days, nowdate
 from construction_management.construction_management.material_request import (
 	get_material_requisition_list,
 	get_project_material_requests,
+	migrate_legacy_custom_project_to_cm_project,
 	validate_construction_material_request,
+)
+from construction_management.construction_management.utils import (
+	ensure_standard_docperms_for_customized_doctypes,
 )
 
 
@@ -146,7 +153,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		return frappe.get_doc(data)
 
 	def _require_migrated_fields(self):
-		if not frappe.db.has_column("Material Request", "custom_project"):
+		if not frappe.db.has_column("Material Request", "cm_project"):
 			self.skipTest(
 				"Requires `bench --site dev.localhost migrate` to install Material Request Custom Fields and Custom DocPerm fixtures."
 			)
@@ -155,14 +162,14 @@ class TestMaterialRequisition(FrappeTestCase):
 		project = self._create_project(frappe.generate_hash(length=6))
 		task = self._create_task("Foundation Concrete", project=project.name)
 		mr = self._make_mr(
-			custom_project=project.name,
+			cm_project=project.name,
 			custom_task=task.name,
 			custom_site_location="Block A",
 			custom_priority="High",
 		)
 		mr.insert()
 
-		self.assertEqual(mr.custom_project, project.name)
+		self.assertEqual(mr.cm_project, project.name)
 		self.assertEqual(mr.items[0].project, project.name)
 		self.assertEqual(mr.custom_requested_by, frappe.session.user)
 
@@ -171,13 +178,13 @@ class TestMaterialRequisition(FrappeTestCase):
 		project_b = self._create_project(f"B-{frappe.generate_hash(length=5)}")
 		task_b = self._create_task("Other Project Task", project=project_b.name)
 
-		mr = self._make_mr(custom_project=project_a.name, custom_task=task_b.name)
+		mr = self._make_mr(cm_project=project_a.name, custom_task=task_b.name)
 		self.assertRaises(frappe.ValidationError, mr.insert)
 
 	def test_child_item_project_mismatch_rejected(self):
 		project_a = self._create_project(f"A-{frappe.generate_hash(length=5)}")
 		project_b = self._create_project(f"B-{frappe.generate_hash(length=5)}")
-		mr = self._make_mr(custom_project=project_a.name)
+		mr = self._make_mr(cm_project=project_a.name)
 		mr.items[0].project = project_b.name
 
 		self.assertRaises(frappe.ValidationError, mr.insert)
@@ -194,7 +201,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		project_b = self._create_project(f"B-{frappe.generate_hash(length=5)}")
 		dpr_b = self._create_dpr(project_b.name)
 
-		mr = self._make_mr(custom_project=project_a.name, custom_dpr=dpr_b.name)
+		mr = self._make_mr(cm_project=project_a.name, custom_dpr=dpr_b.name)
 		self.assertRaises(frappe.ValidationError, mr.insert)
 
 	def test_custom_requested_by_set_server_side_and_validated(self):
@@ -206,7 +213,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		# Ordinary user cannot spoof custom_requested_by on create or modify after create
 		frappe.set_user(ordinary_user)
 		mr = self._make_mr(
-			custom_project=project.name,
+			cm_project=project.name,
 			custom_requested_by=impersonated_user,
 		)
 		mr.insert()
@@ -218,7 +225,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		# Administrator / System Manager creation also records actual session user
 		frappe.set_user("Administrator")
 		mr_admin = self._make_mr(
-			custom_project=project.name,
+			cm_project=project.name,
 			custom_requested_by=ordinary_user,
 		)
 		mr_admin.insert()
@@ -238,7 +245,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		project = self._create_project(frappe.generate_hash(length=6))
 		other_project = self._create_project(f"OTHER-{frappe.generate_hash(length=5)}")
 		mr_1 = self._make_mr(
-			custom_project=project.name,
+			cm_project=project.name,
 			custom_site_location="North Tower",
 			custom_priority="Urgent",
 			transaction_date="2026-11-10",
@@ -247,7 +254,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		mr_1.submit()
 
 		mr_2 = self._make_mr(
-			custom_project=project.name,
+			cm_project=project.name,
 			custom_site_location="South Gate",
 			custom_priority="Low",
 			transaction_date="2026-11-14",
@@ -255,7 +262,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		mr_2.insert()
 
 		mr_other = self._make_mr(
-			custom_project=other_project.name,
+			cm_project=other_project.name,
 			custom_site_location="East Wing",
 			custom_priority="Urgent",
 			transaction_date="2026-11-10",
@@ -292,7 +299,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		self._require_migrated_fields()
 
 		project = self._create_project(frappe.generate_hash(length=6))
-		mr = self._make_mr(custom_project=project.name)
+		mr = self._make_mr(cm_project=project.name)
 		mr.insert()
 
 		mapped = get_project_material_requests(project_name=project.project_name)
@@ -312,9 +319,9 @@ class TestMaterialRequisition(FrappeTestCase):
 		project_a = self._create_project(f"PA-{frappe.generate_hash(length=5)}")
 		project_b = self._create_project(f"PB-{frappe.generate_hash(length=5)}")
 
-		mr_a = self._make_mr(custom_project=project_a.name)
+		mr_a = self._make_mr(cm_project=project_a.name)
 		mr_a.insert()
-		mr_b = self._make_mr(custom_project=project_b.name)
+		mr_b = self._make_mr(cm_project=project_b.name)
 		mr_b.insert()
 
 		projects_user = self._create_user_with_role("Projects User")
@@ -339,7 +346,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		self.assertFalse(frappe.has_permission("Item", "create", user=projects_user))
 		self.assertFalse(frappe.has_permission("Item", "delete", user=projects_user))
 
-		mr_user = self._make_mr(custom_project=project_a.name)
+		mr_user = self._make_mr(cm_project=project_a.name)
 		mr_user.insert()
 		self.assertTrue(frappe.has_permission("Material Request", "submit", doc=mr_user, user=projects_user))
 		mr_user.submit()
@@ -374,7 +381,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		self.assertTrue(frappe.has_permission("Item", "read", user=projects_manager))
 		self.assertFalse(frappe.has_permission("Item", "write", user=projects_manager))
 		self.assertFalse(frappe.has_permission("Item", "create", user=projects_manager))
-		mr_mgr = self._make_mr(custom_project=project_a.name)
+		mr_mgr = self._make_mr(cm_project=project_a.name)
 		mr_mgr.insert()
 		mr_mgr.submit()
 		mr_mgr.cancel()
@@ -394,7 +401,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		schedule_date = add_days(nowdate(), 3)
 		project = self._create_project(frappe.generate_hash(length=6), company=company)
 
-		# Material Request with empty parent custom_project and multiple items for the same Project
+		# Material Request with empty parent cm_project and multiple items for the same Project
 		mr_child_only = frappe.get_doc(
 			{
 				"doctype": "Material Request",
@@ -438,7 +445,7 @@ class TestMaterialRequisition(FrappeTestCase):
 
 		# Zero, negative, missing, and invalid quantities rejected
 		for bad_qty in (0, -5, None, "abc"):
-			mr_bad = self._make_mr(custom_project=project.name)
+			mr_bad = self._make_mr(cm_project=project.name)
 			mr_bad.items[0].qty = bad_qty
 			self.assertRaises((frappe.ValidationError, ValueError, TypeError), mr_bad.insert)
 
@@ -459,7 +466,7 @@ class TestMaterialRequisition(FrappeTestCase):
 				"is_stock_item": 1,
 			}
 		).insert(ignore_permissions=True)
-		mr_decimal = self._make_mr(custom_project=project.name)
+		mr_decimal = self._make_mr(cm_project=project.name)
 		mr_decimal.items[0].item_code = frac_item.name
 		mr_decimal.items[0].uom = frac_uom
 		mr_decimal.items[0].stock_uom = frac_uom
@@ -468,7 +475,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		self.assertEqual(mr_decimal.items[0].qty, 2.5)
 
 		# Valid positive integer quantity and status lifecycle: Draft -> Pending -> Stopped -> Pending -> Cancelled
-		mr_valid = self._make_mr(custom_project=project.name)
+		mr_valid = self._make_mr(cm_project=project.name)
 		mr_valid.items[0].qty = 12
 		mr_valid.insert()
 		self.assertEqual(mr_valid.docstatus, 0)
@@ -516,7 +523,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		self.addCleanup(frappe.set_user, "Administrator")
 
 		# MR created by Administrator (not owned by projects_user)
-		mr_admin = self._make_mr(custom_project=project.name)
+		mr_admin = self._make_mr(cm_project=project.name)
 		mr_admin.insert()
 		mr_admin.submit()
 
@@ -525,7 +532,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		self.assertRaises(frappe.PermissionError, mr_update_status, mr_admin.name, "Stopped")
 
 		# Projects User CAN call native update_status on their own submitted MR
-		mr_own = self._make_mr(custom_project=project.name)
+		mr_own = self._make_mr(cm_project=project.name)
 		mr_own.insert()
 		mr_own.submit()
 		mr_update_status(mr_own.name, "Stopped")
@@ -556,7 +563,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		project_a = self._create_project(f"MA-{frappe.generate_hash(length=5)}", company=company)
 		project_b = self._create_project(f"MB-{frappe.generate_hash(length=5)}", company=company)
 
-		mr_parent = self._make_mr(custom_project=project_a.name)
+		mr_parent = self._make_mr(cm_project=project_a.name)
 		mr_parent.insert()
 
 		mr_child = frappe.get_doc(
@@ -579,7 +586,7 @@ class TestMaterialRequisition(FrappeTestCase):
 		)
 		mr_child.insert()
 
-		mr_other = self._make_mr(custom_project=project_b.name)
+		mr_other = self._make_mr(cm_project=project_b.name)
 		mr_other.insert()
 
 		list_res = get_material_requisition_list(filters={"project": project_a.name})
@@ -592,3 +599,70 @@ class TestMaterialRequisition(FrappeTestCase):
 		proj_names = {r["name"] for r in proj_res["material_requests"]}
 		self.assertEqual(proj_res["mapped_project"], project_a.name)
 		self.assertEqual(proj_names, {mr_parent.name, mr_child.name})
+
+	def test_custom_docperm_fixture_and_create_permissions(self):
+		self._require_migrated_fields()
+
+		fixture_path = Path(frappe.get_app_path("construction_management", "fixtures", "custom_docperm.json"))
+		fixture_rows = json.loads(fixture_path.read_text())
+		self.assertTrue(fixture_rows)
+		self.assertTrue(
+			all(row["role"] in {"Projects Manager", "Projects User"} for row in fixture_rows),
+			"custom_docperm.json must not contain redundant overrides for standard ERPNext roles.",
+		)
+
+		ensure_standard_docperms_for_customized_doctypes()
+
+		for role in ("Purchase User", "Stock User", "Purchase Manager", "Stock Manager"):
+			role_user = self._create_user_with_role(role)
+			self.assertTrue(frappe.has_permission("Material Request", "read", user=role_user))
+			self.assertTrue(frappe.has_permission("Material Request", "create", user=role_user))
+
+		item_mgr = self._create_user_with_role("Item Manager")
+		self.assertTrue(frappe.has_permission("Item", "write", user=item_mgr))
+
+		support_user = self._create_user_with_role("Support Team")
+		self.assertTrue(frappe.has_permission("Issue", "create", user=support_user))
+		self.assertTrue(frappe.has_permission("Issue", "delete", user=support_user))
+
+		mfg_mgr = self._create_user_with_role("Manufacturing Manager")
+		self.assertTrue(frappe.has_permission("Material Request", "read", user=mfg_mgr))
+		self.assertFalse(frappe.has_permission("Material Request", "create", user=mfg_mgr))
+
+	def test_legacy_custom_project_migration_idempotent(self):
+		self._require_migrated_fields()
+		if not frappe.db.has_column("Material Request", "custom_project"):
+			self.skipTest("Legacy custom_project column is not present on this database.")
+
+		project_legacy = self._create_project(f"LEG-{frappe.generate_hash(length=5)}")
+		project_existing = self._create_project(f"CUR-{frappe.generate_hash(length=5)}")
+
+		mr_legacy = self._make_mr()
+		mr_legacy.insert()
+		frappe.db.set_value(
+			"Material Request",
+			mr_legacy.name,
+			{"custom_project": project_legacy.name, "cm_project": None},
+			update_modified=False,
+		)
+
+		mr_existing = self._make_mr(cm_project=project_existing.name)
+		mr_existing.insert()
+		frappe.db.set_value(
+			"Material Request",
+			mr_existing.name,
+			"custom_project",
+			project_legacy.name,
+			update_modified=False,
+		)
+
+		# Run migration twice to confirm idempotency
+		migrate_legacy_custom_project_to_cm_project()
+		migrate_legacy_custom_project_to_cm_project()
+
+		mr_legacy.reload()
+		mr_existing.reload()
+		self.assertEqual(mr_legacy.cm_project, project_legacy.name)
+		self.assertEqual(mr_legacy.items[0].project, project_legacy.name)
+		self.assertEqual(mr_existing.cm_project, project_existing.name)
+		self.assertFalse(frappe.db.exists("Custom Field", "Material Request-custom_project"))

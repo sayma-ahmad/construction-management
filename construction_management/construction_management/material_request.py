@@ -10,6 +10,38 @@ from frappe.utils import cint, flt
 from construction_management.construction_management.utils import resolve_erpnext_project
 
 
+def setup():
+	"""Run after install and migrate: preserve legacy custom_project values into cm_project."""
+	migrate_legacy_custom_project_to_cm_project()
+
+
+def migrate_legacy_custom_project_to_cm_project():
+	"""Idempotently copy legacy custom_project values into cm_project and remove duplicate field."""
+	if frappe.db.has_column("Material Request", "custom_project") and frappe.db.has_column(
+		"Material Request", "cm_project"
+	):
+		frappe.db.sql(
+			"""
+			UPDATE `tabMaterial Request`
+			SET `cm_project` = `custom_project`
+			WHERE COALESCE(`cm_project`, '') = ''
+			  AND COALESCE(`custom_project`, '') != ''
+			"""
+		)
+		frappe.db.sql(
+			"""
+			UPDATE `tabMaterial Request Item` AS mri
+			INNER JOIN `tabMaterial Request` AS mr ON mr.`name` = mri.`parent`
+			SET mri.`project` = mr.`cm_project`
+			WHERE COALESCE(mri.`project`, '') = ''
+			  AND COALESCE(mr.`cm_project`, '') != ''
+			"""
+		)
+
+	if frappe.db.exists("Custom Field", "Material Request-custom_project"):
+		frappe.delete_doc("Custom Field", "Material Request-custom_project", ignore_permissions=True)
+
+
 def validate_construction_material_request(doc, method=None):
 	"""Validate construction-specific fields, quantities, and project consistency on Material Request."""
 	_set_and_validate_requested_by(doc)
@@ -18,48 +50,48 @@ def validate_construction_material_request(doc, method=None):
 		if flt(row.get("qty")) <= 0:
 			frappe.throw(_("Row #{0}: Quantity must be greater than 0.").format(row.idx))
 
-	custom_project = doc.get("custom_project")
+	cm_project = doc.get("cm_project")
 	custom_task = doc.get("custom_task")
 	custom_dpr = doc.get("custom_dpr")
 
-	if custom_task and not custom_project:
+	if custom_task and not cm_project:
 		frappe.throw(_("Please select a Project when a Task is specified."))
 
-	if custom_task and custom_project:
+	if custom_task and cm_project:
 		task_project = frappe.db.get_value("Task", custom_task, "project")
-		if task_project != custom_project:
+		if task_project != cm_project:
 			if task_project:
 				frappe.throw(
 					_("Task {0} belongs to Project {1}, not {2}.").format(
-						custom_task, task_project, custom_project
+						custom_task, task_project, cm_project
 					)
 				)
 			frappe.throw(
-				_("Task {0} is not linked to Project {1}.").format(custom_task, custom_project)
+				_("Task {0} is not linked to Project {1}.").format(custom_task, cm_project)
 			)
 
 	if custom_dpr:
-		if not custom_project:
+		if not cm_project:
 			frappe.throw(_("Please select a Project when a Daily Progress Report is linked."))
 		dpr_project = frappe.db.get_value("Daily Progress Report", custom_dpr, "project")
-		if dpr_project != custom_project:
+		if dpr_project != cm_project:
 			frappe.throw(
 				_("Daily Progress Report {0} belongs to Project {1}, not {2}.").format(
-					custom_dpr, dpr_project, custom_project
+					custom_dpr, dpr_project, cm_project
 				)
 			)
 
-	if custom_project:
+	if cm_project:
 		for row in doc.get("items") or []:
 			row_project = row.get("project")
-			if row_project and row_project != custom_project:
+			if row_project and row_project != cm_project:
 				frappe.throw(
 					_("Row #{0}: Item Project {1} does not match Material Request Project {2}.").format(
-						row.idx, row_project, custom_project
+						row.idx, row_project, cm_project
 					)
 				)
 			if not row_project:
-				row.project = custom_project
+				row.project = cm_project
 
 
 def _set_and_validate_requested_by(doc):
@@ -77,11 +109,11 @@ def _set_and_validate_requested_by(doc):
 
 
 def _get_project_matched_mr_names(project):
-	"""Return permitted Material Request names matching parent custom_project or child item project."""
+	"""Return permitted Material Request names matching parent cm_project or child item project."""
 	parent_matches = set(
 		frappe.get_list(
 			"Material Request",
-			filters={"custom_project": project},
+			filters={"cm_project": project},
 			pluck="name",
 			limit_page_length=0,
 		)
@@ -101,8 +133,8 @@ def _get_project_matched_mr_names(project):
 
 
 def _attach_resolved_projects(records):
-	"""Populate display `project` from parent custom_project or permitted child item projects."""
-	missing_parent_names = [row["name"] for row in records if not row.get("custom_project")]
+	"""Populate display `project` from parent cm_project or permitted child item projects."""
+	missing_parent_names = [row["name"] for row in records if not row.get("cm_project")]
 	child_project_map = {}
 	if missing_parent_names:
 		item_rows = frappe.get_all(
@@ -117,8 +149,8 @@ def _attach_resolved_projects(records):
 				child_project_map[item.parent].append(item.project)
 
 	for row in records:
-		if row.get("custom_project"):
-			row["project"] = row["custom_project"]
+		if row.get("cm_project"):
+			row["project"] = row["cm_project"]
 		else:
 			row["project"] = ", ".join(child_project_map.get(row["name"], []))
 
@@ -168,7 +200,7 @@ def get_material_requisition_list(filters=None, search=None, start=0, page_lengt
 		or_filters = [
 			["Material Request", "name", "like", like],
 			["Material Request", "title", "like", like],
-			["Material Request", "custom_project", "like", like],
+			["Material Request", "cm_project", "like", like],
 			["Material Request", "custom_site_location", "like", like],
 		]
 
@@ -183,7 +215,7 @@ def get_material_requisition_list(filters=None, search=None, start=0, page_lengt
 			"status",
 			"per_ordered",
 			"per_received",
-			"custom_project",
+			"cm_project",
 			"custom_task",
 			"custom_site_location",
 			"custom_priority",
