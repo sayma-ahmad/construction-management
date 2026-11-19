@@ -55,21 +55,24 @@ class TestMaterialRequisition(FrappeTestCase):
 		doc.insert(ignore_permissions=True)
 		return doc.name
 
-	def _get_or_create_item(self):
-		item = frappe.db.get_value(
-			"Item", {"is_stock_item": 1, "disabled": 0}, "name"
-		)
+	def _get_or_create_item(self, exclude=None):
+		filters = {"is_stock_item": 1, "disabled": 0}
+		if exclude:
+			excluded = [exclude] if isinstance(exclude, str) else list(exclude)
+			filters["name"] = ["not in", excluded]
+		item = frappe.db.get_value("Item", filters, "name")
 		if item:
 			return item
 		uom = frappe.db.get_value("UOM", {"name": "Nos"}, "name") or "Unit"
 		if not frappe.db.exists("UOM", uom):
 			frappe.get_doc({"doctype": "UOM", "uom_name": uom}).insert(ignore_permissions=True)
 		item_group = frappe.db.get_value("Item Group", {"is_group": 0}, "name") or "All Item Groups"
+		suffix = frappe.generate_hash(length=6)
 		doc = frappe.get_doc(
 			{
 				"doctype": "Item",
-				"item_code": f"CM-MAT-{frappe.generate_hash(length=6)}",
-				"item_name": "Test Cement Bag",
+				"item_code": f"CM-MAT-{suffix}",
+				"item_name": f"Test Cement Bag {suffix}",
 				"item_group": item_group,
 				"cm_material_type": "Civil",
 				"stock_uom": uom,
@@ -397,11 +400,13 @@ class TestMaterialRequisition(FrappeTestCase):
 
 		company = self._get_or_create_company()
 		warehouse = self._get_or_create_warehouse(company)
-		item = self._get_or_create_item()
+		item_1 = self._get_or_create_item()
+		item_2 = self._get_or_create_item(exclude=item_1)
+		self.assertNotEqual(item_1, item_2)
 		schedule_date = add_days(nowdate(), 3)
 		project = self._create_project(frappe.generate_hash(length=6), company=company)
 
-		# Material Request with empty parent cm_project and multiple items for the same Project
+		# Material Request with empty parent cm_project and multiple distinct items for the same Project
 		mr_child_only = frappe.get_doc(
 			{
 				"doctype": "Material Request",
@@ -411,14 +416,14 @@ class TestMaterialRequisition(FrappeTestCase):
 				"schedule_date": schedule_date,
 				"items": [
 					{
-						"item_code": item,
+						"item_code": item_1,
 						"qty": 5,
 						"schedule_date": schedule_date,
 						"warehouse": warehouse,
 						"project": project.name,
 					},
 					{
-						"item_code": item,
+						"item_code": item_2,
 						"qty": 8,
 						"schedule_date": schedule_date,
 						"warehouse": warehouse,
