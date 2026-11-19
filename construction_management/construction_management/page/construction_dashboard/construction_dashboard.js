@@ -16,6 +16,7 @@ const STATUS_INDICATOR = {
 	"At Risk": "orange",
 	"Delayed": "red",
 	"Completed": "green",
+	"On Hold": "orange",
 };
 
 frappe.pages["construction-dashboard"].on_page_load = function (wrapper) {
@@ -28,10 +29,20 @@ frappe.pages["construction-dashboard"].on_page_load = function (wrapper) {
 	page.set_secondary_action(__("Workspace"), () => frappe.set_route("construction-management"));
 	page.set_primary_action(__("Refresh"), () => load_dashboard(page));
 
+	wrapper.page = page;
 	load_dashboard(page);
 };
 
+frappe.pages["construction-dashboard"].on_page_show = function (wrapper) {
+	if (wrapper.page) {
+		load_dashboard(wrapper.page);
+	}
+};
+
 function load_dashboard(page) {
+	if (page._is_loading) return;
+	page._is_loading = true;
+
 	$(page.main).empty();
 	const $loading = $(`
 		<div class="text-center p-5 text-muted">
@@ -43,6 +54,7 @@ function load_dashboard(page) {
 	frappe.call({
 		method: "construction_management.dashboard.get_dashboard_data",
 		callback: (r) => {
+			page._is_loading = false;
 			$loading.remove();
 			if (r.message) {
 				render_dashboard(page.main, r.message);
@@ -51,6 +63,7 @@ function load_dashboard(page) {
 			}
 		},
 		error: () => {
+			page._is_loading = false;
 			$loading.remove();
 			$(page.main).html(`<div class="text-center p-5 text-danger">${__("Failed to load dashboard data.")}</div>`);
 		},
@@ -63,7 +76,7 @@ function render_dashboard(container, data) {
 			<div class="cm-kpi-grid"></div>
 			<div class="cm-row">
 				<div class="cm-card cm-span-8">
-					${section_header(__("Project Completion"), __("Planned vs actual progress across sites"))}
+					${section_header(__("Project Completion"), __("Historical progress from submitted Daily Progress Reports"))}
 					<div class="cm-completion-chart"></div>
 				</div>
 				<div class="cm-card cm-span-4">
@@ -95,10 +108,14 @@ function render_dashboard(container, data) {
 	$dashboard.find(".cm-project-list").html(project_table(data.projects || []));
 	$dashboard.find(".cm-activity-list").html((data.activity || []).map(activity_item).join(""));
 
-	// KPI card click handler to open underlying object / list
+	// KPI card click handler with permission verification
 	$dashboard.find(".cm-kpi-grid").on("click", ".cm-kpi-clickable", function () {
 		const route = $(this).attr("data-route");
 		const doctype = $(this).attr("data-doctype");
+		if (doctype && !frappe.model.can_read(doctype)) {
+			frappe.msgprint(__("Not permitted to view {0}", [doctype]));
+			return;
+		}
 		if (route) {
 			frappe.set_route(route.split("/"));
 		} else if (doctype) {
@@ -109,40 +126,66 @@ function render_dashboard(container, data) {
 	// Project row click handler
 	$dashboard.find(".cm-project-list").on("click", "tr[data-project]", function () {
 		const proj = $(this).attr("data-project");
-		if (proj) frappe.set_route("Form", "Project", proj);
+		if (proj && frappe.model.can_read("Project")) {
+			frappe.set_route("Form", "Project", proj);
+		}
 	});
 
-	// Render Charts
-	if (data.completion && data.completion.labels && data.completion.labels.length) {
+	// Activity row click handler
+	$dashboard.find(".cm-activity-list").on("click", ".cm-activity-clickable", function () {
+		const dt = $(this).attr("data-doctype");
+		const dn = $(this).attr("data-docname");
+		if (dt && dn && frappe.model.can_read(dt)) {
+			frappe.set_route("Form", dt, dn);
+		}
+	});
+
+	// 1. Completion Chart (only render if actual data exists, else show clean empty state)
+	if (data.completion && data.completion.labels && data.completion.labels.length && data.completion.actual && data.completion.actual.some((v) => v > 0)) {
 		new frappe.Chart($dashboard.find(".cm-completion-chart")[0], {
 			type: "line",
 			height: 260,
-			colors: [COLORS.light_gray, COLORS.accent],
+			colors: [COLORS.accent],
 			data: {
 				labels: data.completion.labels,
 				datasets: [
-					{ name: __("Planned"), values: data.completion.planned },
-					{ name: __("Actual"), values: data.completion.actual },
+					{ name: __("Actual Progress (%)"), values: data.completion.actual },
 				],
 			},
 			axisOptions: { xIsSeries: 1 },
 			lineOptions: { regionFill: 1, dotSize: 4 },
 			tooltipOptions: { formatTooltipY: (value) => `${value}%` },
 		});
+	} else {
+		$dashboard.find(".cm-completion-chart").html(`
+			<div class="text-center text-muted p-5">
+				<div>${__("No historical project progress recorded in Daily Progress Reports yet.")}</div>
+			</div>
+		`);
 	}
 
-	if (data.task_status && data.task_status.labels && data.task_status.labels.length) {
+	// 2. Task Status Donut Chart (mutually exclusive)
+	const taskValues = (data.task_status && data.task_status.values) || [0, 0, 0, 0];
+	const hasTasks = taskValues.some((v) => v > 0);
+	if (hasTasks) {
 		new frappe.Chart($dashboard.find(".cm-task-chart")[0], {
 			type: "donut",
 			height: 260,
 			colors: [COLORS.success, COLORS.accent, COLORS.mid_gray, COLORS.danger],
 			data: {
 				labels: data.task_status.labels.map((label) => __(label)),
-				datasets: [{ values: data.task_status.values }],
+				datasets: [{ values: taskValues }],
 			},
 		});
+	} else {
+		$dashboard.find(".cm-task-chart").html(`
+			<div class="text-center text-muted p-5">
+				<div>${__("No tasks found across projects.")}</div>
+			</div>
+		`);
 	}
 
+	// 3. Inventory Bar Chart (without synthetic fallback materials)
 	if (data.inventory && data.inventory.labels && data.inventory.labels.length) {
 		new frappe.Chart($dashboard.find(".cm-inventory-chart")[0], {
 			type: "bar",
@@ -157,6 +200,12 @@ function render_dashboard(container, data) {
 			},
 			barOptions: { spaceRatio: 0.4 },
 		});
+	} else {
+		$dashboard.find(".cm-inventory-chart").html(`
+			<div class="text-center text-muted p-5">
+				<div>${__("No stock items found in warehouse inventory.")}</div>
+			</div>
+		`);
 	}
 }
 
@@ -181,11 +230,11 @@ const FALLBACK_SVGS = {
 };
 
 function kpi_card(kpi) {
+	const defaultCurrency = (frappe.boot && frappe.boot.sysdefaults && frappe.boot.sysdefaults.currency) || "INR";
 	const formattedVal = kpi.is_currency
-		? format_currency(kpi.value || 0, kpi.currency || "INR", 0)
+		? format_currency(kpi.value || 0, kpi.currency || defaultCurrency, 0)
 		: format_number(kpi.value || 0, null, 0);
 
-	// Ensure every KPI has an icon with robust fallbacks
 	const iconMap = {
 		project: "project",
 		order: "buying",
@@ -210,16 +259,19 @@ function kpi_card(kpi) {
 		iconHtml = FALLBACK_SVGS[iconKey] || FALLBACK_SVGS.project;
 	}
 
+	const isClickable = kpi.has_permission !== false && kpi.doctype && frappe.model.can_read(kpi.doctype);
+	const clickableClass = isClickable ? "cm-kpi-clickable" : "";
+
 	return `
-		<div class="cm-card cm-kpi cm-kpi-clickable"
+		<div class="cm-card cm-kpi ${clickableClass}"
 			data-route="${frappe.utils.escape_html(kpi.route || "")}"
 			data-doctype="${frappe.utils.escape_html(kpi.doctype || "")}"
-			title="${__("Click to view {0}", [__(kpi.label)])}">
+			title="${isClickable ? __("Click to view {0}", [__(kpi.label)]) : __(kpi.label)}">
 			<div class="cm-kpi-icon">${iconHtml}</div>
 			<div class="cm-kpi-content">
 				<div class="cm-kpi-label">${__(kpi.label)}</div>
 				<div class="cm-kpi-value">${formattedVal}</div>
-				<div class="cm-kpi-note">${__(kpi.note)}</div>
+				<div class="cm-kpi-note">${frappe.utils.escape_html(kpi.note || "")}</div>
 			</div>
 		</div>
 	`;
@@ -236,23 +288,28 @@ function project_table(projects) {
 
 	const rows = projects
 		.map(
-			(project) => `
-			<tr data-project="${frappe.utils.escape_html(project.id || project.name)}" title="${__("Open Project")}">
-				<td>
-					<div class="cm-project-name font-weight-bold">${frappe.utils.escape_html(project.name)}</div>
-					<div class="cm-project-site text-muted">${frappe.utils.escape_html(project.site)}</div>
-				</td>
-				<td class="cm-nowrap">${frappe.datetime.str_to_user(project.due)}</td>
-				<td class="cm-progress-cell">
-					<div class="cm-progress">
-						<div class="cm-progress-bar" style="width: ${project.progress}%"></div>
-					</div>
-					<span class="cm-progress-value">${project.progress}%</span>
-				</td>
-				<td>
-					<span class="indicator-pill ${STATUS_INDICATOR[project.status] || "gray"}">${__(project.status)}</span>
-				</td>
-			</tr>`
+			(project) => {
+				const progressPct = Math.min(100, Math.max(0, flt(project.progress) || 0));
+				const dueText = project.due ? frappe.datetime.str_to_user(project.due) : "—";
+				const siteText = project.site ? frappe.utils.escape_html(project.site) : "—";
+				return `
+				<tr data-project="${frappe.utils.escape_html(project.id || project.name)}" title="${__("Open Project")}">
+					<td>
+						<div class="cm-project-name font-weight-bold">${frappe.utils.escape_html(project.name)}</div>
+						<div class="cm-project-site text-muted">${siteText}</div>
+					</td>
+					<td class="cm-nowrap">${dueText}</td>
+					<td class="cm-progress-cell">
+						<div class="cm-progress">
+							<div class="cm-progress-bar" style="width: ${progressPct}%"></div>
+						</div>
+						<span class="cm-progress-value">${progressPct}%</span>
+					</td>
+					<td>
+						<span class="indicator-pill ${STATUS_INDICATOR[project.status] || "gray"}">${__(project.status)}</span>
+					</td>
+				</tr>`;
+			}
 		)
 		.join("");
 
@@ -274,8 +331,13 @@ function project_table(projects) {
 }
 
 function activity_item(item) {
+	const canNavigate = item.doctype && item.docname && frappe.model.can_read(item.doctype);
+	const clickableClass = canNavigate ? "cm-activity-clickable cursor-pointer" : "";
 	return `
-		<div class="cm-activity">
+		<div class="cm-activity ${clickableClass}"
+			data-doctype="${frappe.utils.escape_html(item.doctype || "")}"
+			data-docname="${frappe.utils.escape_html(item.docname || "")}"
+			title="${canNavigate ? __("Open {0}", [item.docname]) : ""}">
 			<span class="indicator gray"></span>
 			<span class="cm-activity-text">${frappe.utils.escape_html(item.text)}</span>
 			<span class="cm-activity-time">${frappe.utils.escape_html(item.time)}</span>

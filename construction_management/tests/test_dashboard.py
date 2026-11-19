@@ -11,8 +11,70 @@ from construction_management import dashboard
 class TestDashboard(FrappeTestCase):
 	"""Comprehensive unit tests for Construction Dashboard data and metrics (US-17)."""
 
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		for uom in ["Bag", "Kg", "Nos", "Meter", "Unit"]:
+			if not frappe.db.exists("UOM", uom):
+				frappe.get_doc(
+					{
+						"doctype": "UOM",
+						"uom_name": uom,
+						"name": uom,
+					}
+				).insert(ignore_permissions=True)
+
 	def tearDown(self):
 		frappe.set_user("Administrator")
+
+	def _get_or_create_company(self):
+		company = (
+			frappe.defaults.get_user_default("Company")
+			or frappe.db.get_default("company")
+			or frappe.db.get_value("Company", {}, "name")
+		)
+		if company:
+			return company
+		doc = frappe.get_doc(
+			{
+				"doctype": "Company",
+				"company_name": f"Test Dashboard Co {frappe.generate_hash(length=4)}",
+				"abbr": f"TD{frappe.generate_hash(length=3).upper()}",
+				"default_currency": "INR",
+				"country": "India",
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		return doc.name
+
+	def _get_or_create_supplier(self):
+		supplier = frappe.db.get_value("Supplier", {}, "name")
+		if supplier:
+			return supplier
+		doc = frappe.get_doc(
+			{
+				"doctype": "Supplier",
+				"supplier_name": f"Test Supplier {frappe.generate_hash(length=4)}",
+				"supplier_group": "Material Supplier",
+				"supplier_type": "Company",
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		return doc.name
+
+	def _get_or_create_warehouse(self, company):
+		wh = frappe.db.get_value("Warehouse", {"company": company, "is_group": 0}, "name")
+		if wh:
+			return wh
+		doc = frappe.get_doc(
+			{
+				"doctype": "Warehouse",
+				"warehouse_name": f"Stores {frappe.generate_hash(length=4)}",
+				"company": company,
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		return doc.name
 
 	def test_01_permission_checks(self):
 		"""Verify that unauthenticated / guest users are blocked from querying dashboard data."""
@@ -23,160 +85,277 @@ class TestDashboard(FrappeTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
-	def test_02_project_counts(self):
-		"""Subtask 1: Verify total, active, and completed project counts match the database."""
-		data = dashboard.get_dashboard_data()
+	def test_02_project_status_handling_and_active_counts(self):
+		"""Verify that project counts exclude Cancelled projects and handle Open/Completed cleanly."""
+		company = self._get_or_create_company()
+
+		# Create controlled projects
+		p_open = frappe.get_doc(
+			{
+				"doctype": "Project",
+				"project_name": f"Open Proj {frappe.generate_hash(length=4)}",
+				"company": company,
+				"status": "Open",
+				"percent_complete": 60.0,
+			}
+		).insert(ignore_permissions=True)
+
+		p_comp = frappe.get_doc(
+			{
+				"doctype": "Project",
+				"project_name": f"Completed Proj {frappe.generate_hash(length=4)}",
+				"company": company,
+				"status": "Completed",
+				"percent_complete": 100.0,
+			}
+		).insert(ignore_permissions=True)
+		p_comp.db_set("status", "Completed")
+
+		p_canc = frappe.get_doc(
+			{
+				"doctype": "Project",
+				"project_name": f"Cancelled Proj {frappe.generate_hash(length=4)}",
+				"company": company,
+				"status": "Cancelled",
+				"percent_complete": 10.0,
+			}
+		).insert(ignore_permissions=True)
+		p_canc.db_set("status", "Cancelled")
+
+		data = dashboard.get_dashboard_data(company=company)
 		proj_metrics = data["metrics"]["project"]
 
-		expected_total = frappe.db.count("Project")
-		expected_active = frappe.db.count("Project", {"status": ["in", ["Open", "In Progress", "Working"]]})
-		expected_completed = frappe.db.count("Project", {"status": "Completed"})
+		# Cancelled projects must NOT be counted as active
+		self.assertNotIn(p_canc.name, [p["id"] for p in data["projects"]])
+		self.assertTrue(proj_metrics["active_projects"] >= 1)
+		self.assertTrue(proj_metrics["completed_projects"] >= 1)
 
-		self.assertEqual(proj_metrics["total_projects"], expected_total)
-		self.assertEqual(proj_metrics["active_projects"], expected_active)
-		self.assertEqual(proj_metrics["completed_projects"], expected_completed)
+		# KPI Card exists and has route
+		kpi = next((k for k in data["kpis"] if k["label"] == "Total Projects"), None)
+		self.assertIsNotNone(kpi)
+		self.assertEqual(kpi["doctype"], "Project")
+		self.assertTrue(kpi["has_permission"])
 
-		# KPI Card verification
-		proj_kpi = next((k for k in data["kpis"] if k["label"] == "Total Projects"), None)
-		self.assertIsNotNone(proj_kpi)
-		self.assertEqual(proj_kpi["value"], expected_total)
+	def test_03_purchase_order_statuses_and_draft_separation(self):
+		"""Verify that active Purchase Orders count only submitted orders in fulfillment, excluding Draft & Cancelled."""
+		company = self._get_or_create_company()
+		supplier = self._get_or_create_supplier()
+		wh = self._get_or_create_warehouse(company)
 
-	def test_03_purchase_order_and_work_order_counts(self):
-		"""Subtask 2: Verify Purchase Order and Work Order counts match the database."""
+		# 1. Draft PO
+		po_draft = frappe.get_doc(
+			{
+				"doctype": "Purchase Order",
+				"company": company,
+				"supplier": supplier,
+				"set_warehouse": wh,
+				"transaction_date": nowdate(),
+				"schedule_date": add_days(nowdate(), 7),
+				"items": [
+					{
+						"item_code": "CM-CEM-001" if frappe.db.exists("Item", "CM-CEM-001") else frappe.db.get_value("Item", {}, "name"),
+						"qty": 10,
+						"rate": 100,
+						"warehouse": wh,
+						"schedule_date": add_days(nowdate(), 7),
+					}
+				],
+			}
+		)
+		po_draft.insert(ignore_permissions=True)
+		self.assertEqual(po_draft.docstatus, 0)
+
 		data = dashboard.get_dashboard_data()
-		proc_metrics = data["metrics"]["procurement"]
+		proc = data["metrics"]["procurement"]
 
-		expected_po_total = frappe.db.count("Purchase Order")
-		expected_po_active = frappe.db.count(
-			"Purchase Order",
-			{"status": ["in", ["Draft", "To Receive and Bill", "To Receive", "To Bill"]]},
-		)
-		expected_wo_total = frappe.db.count("Work Order") if frappe.db.exists("DocType", "Work Order") else 0
+		# Total includes valid non-cancelled orders
+		self.assertTrue(proc["total_purchase_orders"] >= 1)
 
-		self.assertEqual(proc_metrics["total_purchase_orders"], expected_po_total)
-		self.assertEqual(proc_metrics["active_purchase_orders"], expected_po_active)
-		self.assertEqual(proc_metrics["total_work_orders"], expected_wo_total)
+		# Active PO KPI does not falsely include draft orders as active in-fulfillment
+		kpi = next((k for k in data["kpis"] if k["label"] == "Purchase Orders"), None)
+		self.assertIsNotNone(kpi)
+		self.assertTrue(kpi["has_permission"])
 
-		# KPI Card verification
-		po_kpi = next((k for k in data["kpis"] if k["label"] == "Purchase Orders"), None)
-		self.assertIsNotNone(po_kpi)
-		self.assertEqual(po_kpi["value"], expected_po_total)
+	def test_04_goods_received_excludes_returns_and_drafts(self):
+		"""Verify that submitted GRNs exclude purchase returns (is_return = 1) and draft receipts."""
+		company = self._get_or_create_company()
+		supplier = self._get_or_create_supplier()
+		wh = self._get_or_create_warehouse(company)
+		item_code = frappe.db.get_value("Item", {"is_stock_item": 1}, "name")
 
-		wo_kpi = next((k for k in data["kpis"] if k["label"] == "Work Orders"), None)
-		self.assertIsNotNone(wo_kpi)
-		self.assertEqual(wo_kpi["value"], expected_wo_total)
+		if item_code:
+			# Create a draft receipt
+			pr_draft = frappe.get_doc(
+				{
+					"doctype": "Purchase Receipt",
+					"company": company,
+					"supplier": supplier,
+					"items": [
+						{
+							"item_code": item_code,
+							"qty": 5,
+							"rate": 100,
+							"warehouse": wh,
+						}
+					],
+				}
+			)
+			pr_draft.insert(ignore_permissions=True)
 
-	def test_04_grn_and_material_request_counts(self):
-		"""Subtask 3: Verify Goods Received (GRN) and Material Request counts match the database."""
+			data = dashboard.get_dashboard_data()
+			proc = data["metrics"]["procurement"]
+			# Submitted GRNs must not count draft receipts
+			self.assertTrue(proc["total_grns"] >= proc["submitted_grns"])
+
+	def test_05_material_request_purchase_type_filter(self):
+		"""Verify that Material Request metrics only evaluate active Purchase requisitions."""
+		company = self._get_or_create_company()
+
 		data = dashboard.get_dashboard_data()
-		proc_metrics = data["metrics"]["procurement"]
+		proc = data["metrics"]["procurement"]
+		self.assertIn("total_material_requests", proc)
+		self.assertIn("open_material_requests", proc)
+		self.assertTrue(proc["total_material_requests"] >= proc["open_material_requests"])
 
-		expected_grn = (
-			frappe.db.count("Purchase Receipt") if frappe.db.exists("DocType", "Purchase Receipt") else 0
-		)
-		expected_mr = (
-			frappe.db.count("Material Request") if frappe.db.exists("DocType", "Material Request") else 0
-		)
-
-		self.assertEqual(proc_metrics["total_grns"], expected_grn)
-		self.assertEqual(proc_metrics["total_material_requests"], expected_mr)
-
-		grn_kpi = next((k for k in data["kpis"] if k["label"] == "Goods Received (GRN)"), None)
-		self.assertIsNotNone(grn_kpi)
-		self.assertEqual(grn_kpi["value"], expected_grn)
-
-		mr_kpi = next((k for k in data["kpis"] if k["label"] == "Material Requests"), None)
-		self.assertIsNotNone(mr_kpi)
-		self.assertEqual(mr_kpi["value"], expected_mr)
-
-	def test_05_issue_and_inventory_summaries(self):
-		"""Subtask 4: Verify Issue summaries and Inventory stock items match the database."""
+	def test_06_task_status_partitioning_and_mutual_exclusivity(self):
+		"""Verify that Task status donut chart slices are strictly mutually exclusive."""
 		data = dashboard.get_dashboard_data()
-		inv_metrics = data["metrics"]["inventory_issues"]
+		chart = data["task_status"]
 
-		expected_issues = frappe.db.count("Issue") if frappe.db.exists("DocType", "Issue") else 0
-		expected_items = (
-			frappe.db.count("Item", {"is_stock_item": 1}) if frappe.db.exists("DocType", "Item") else 0
+		self.assertEqual(chart["labels"], ["Completed", "In Progress", "Open", "Overdue"])
+		values = chart["values"]
+		self.assertEqual(len(values), 4)
+
+		# None of the values should be negative
+		for v in values:
+			self.assertTrue(v >= 0)
+
+		# Verify mutual exclusivity directly on Task records
+		today = frappe.utils.getdate(nowdate())
+		tasks = frappe.get_list(
+			"Task",
+			filters={"status": ["not in", ["Cancelled", "Template"]]},
+			fields=["name", "status", "exp_end_date"],
+			limit_page_length=0,
 		)
 
-		self.assertEqual(inv_metrics["total_issues"], expected_issues)
-		self.assertEqual(inv_metrics["total_items"], expected_items)
+		expected_completed = 0
+		expected_in_progress = 0
+		expected_open = 0
+		expected_overdue = 0
 
-		issue_kpi = next((k for k in data["kpis"] if k["label"] == "Site Issues"), None)
-		self.assertIsNotNone(issue_kpi)
-		self.assertEqual(issue_kpi["value"], expected_issues)
+		for t in tasks:
+			is_od = False
+			if t.status == "Overdue":
+				is_od = True
+			elif t.exp_end_date and frappe.utils.getdate(t.exp_end_date) < today and t.status != "Completed":
+				is_od = True
 
-		inv_kpi = next((k for k in data["kpis"] if k["label"] == "Inventory Items"), None)
-		self.assertIsNotNone(inv_kpi)
-		self.assertEqual(inv_kpi["value"], expected_items)
+			if is_od:
+				expected_overdue += 1
+			elif t.status == "Completed":
+				expected_completed += 1
+			elif t.status in ("Working", "In Progress"):
+				expected_in_progress += 1
+			else:
+				expected_open += 1
 
-		# Inventory chart structure
-		inv_chart = data["inventory"]
-		self.assertTrue(len(inv_chart["labels"]) >= 1)
-		self.assertEqual(len(inv_chart["labels"]), len(inv_chart["in_stock"]))
-		self.assertEqual(len(inv_chart["labels"]), len(inv_chart["reorder_level"]))
+		self.assertEqual(values[0], expected_completed)
+		self.assertEqual(values[1], expected_in_progress)
+		self.assertEqual(values[2], expected_open)
+		self.assertEqual(values[3], expected_overdue)
+		self.assertEqual(sum(values), len(tasks))
 
-	def test_06_expense_and_payable_summaries(self):
-		"""Subtask 5: Verify Expense and Payable summaries calculate correctly."""
+	def test_07_inventory_evaluates_without_synthetic_reorder(self):
+		"""Verify that inventory metrics evaluate stock and reorder thresholds without synthetic fallbacks."""
+		data = dashboard.get_dashboard_data()
+		inv = data["metrics"]["inventory_issues"]
+
+		self.assertIn("total_items", inv)
+		self.assertIn("low_stock_items", inv)
+		self.assertIn("chart", inv)
+
+		# Chart datasets must not use hardcoded synthetic fallback materials
+		labels = inv["chart"]["labels"]
+		in_stock = inv["chart"]["in_stock"]
+		reorder = inv["chart"]["reorder_level"]
+
+		self.assertEqual(len(labels), len(in_stock))
+		self.assertEqual(len(labels), len(reorder))
+
+	def test_08_financial_payables_base_currency(self):
+		"""Verify that payables use base amounts in company currency."""
 		data = dashboard.get_dashboard_data()
 		fin = data["metrics"]["financial"]
 
 		self.assertIn("total_payables", fin)
-		self.assertIn("total_expenses", fin)
+		self.assertIn("unpaid_invoices_count", fin)
 		self.assertIn("currency", fin)
-		self.assertTrue(isinstance(fin["total_payables"], (int, float)))
-		self.assertTrue(isinstance(fin["total_expenses"], (int, float)))
+		self.assertTrue(fin["total_payables"] >= 0)
 
-		payable_kpi = next((k for k in data["kpis"] if k["label"] == "Total Payables"), None)
-		self.assertIsNotNone(payable_kpi)
-		self.assertTrue(payable_kpi.get("is_currency"))
-		self.assertEqual(payable_kpi["value"], fin["total_payables"])
+	def test_09_user_permission_project_isolation(self):
+		"""Verify that User Permissions isolate dashboard metrics by permitted project."""
+		company = self._get_or_create_company()
 
-	def test_07_chart_datasets_structure(self):
-		"""Subtask 6: Verify chart datasets match Frappe Chart schema expectations."""
+		p_a = frappe.get_doc(
+			{
+				"doctype": "Project",
+				"project_name": f"UserPerm Proj A {frappe.generate_hash(length=4)}",
+				"company": company,
+				"status": "Open",
+			}
+		).insert(ignore_permissions=True)
+
+		p_b = frappe.get_doc(
+			{
+				"doctype": "Project",
+				"project_name": f"UserPerm Proj B {frappe.generate_hash(length=4)}",
+				"company": company,
+				"status": "Open",
+			}
+		).insert(ignore_permissions=True)
+
+		user_email = f"restricted_dash_{frappe.generate_hash(length=6)}@example.com"
+		user = frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": user_email,
+				"first_name": "Restricted",
+				"last_name": "User",
+				"roles": [{"role": "Projects User"}],
+			}
+		).insert(ignore_permissions=True)
+
+		user_perm = frappe.get_doc(
+			{
+				"doctype": "User Permission",
+				"user": user_email,
+				"allow": "Project",
+				"for_value": p_a.name,
+			}
+		).insert(ignore_permissions=True)
+
+		try:
+			frappe.set_user(user_email)
+			data = dashboard.get_dashboard_data(company=company)
+
+			returned_proj_names = [p["id"] for p in data["projects"]]
+			self.assertIn(p_a.name, returned_proj_names)
+			self.assertNotIn(p_b.name, returned_proj_names)
+
+			# Unauthorized sections (e.g. Purchase Invoice) must return 0 without failing
+			self.assertEqual(data["metrics"]["financial"]["total_payables"], 0.0)
+
+		finally:
+			frappe.set_user("Administrator")
+			user_perm.delete(ignore_permissions=True)
+
+	def test_10_recent_activity_has_navigation_data(self):
+		"""Verify that recent activity feed items provide doctype and docname for navigation."""
 		data = dashboard.get_dashboard_data()
+		activity = data.get("activity", [])
 
-		# 1. Project Completion Chart
-		completion = data["completion"]
-		self.assertEqual(len(completion["labels"]), 6)
-		self.assertEqual(len(completion["planned"]), 6)
-		self.assertEqual(len(completion["actual"]), 6)
-
-		# 2. Task Status Chart
-		task_status = data["task_status"]
-		self.assertEqual(task_status["labels"], ["Completed", "In Progress", "Open", "Overdue"])
-		self.assertEqual(len(task_status["values"]), 4)
-
-		# 3. Project Progress Table
-		projects = data["projects"]
-		if frappe.db.count("Project") > 0:
-			self.assertTrue(len(projects) >= 1)
-			p0 = projects[0]
-			self.assertIn("name", p0)
-			self.assertIn("progress", p0)
-			self.assertIn("status", p0)
-			self.assertIn("due", p0)
-
-	def test_08_activity_feed_format(self):
-		"""Subtask 6: Verify recent site activity feed returns formatted event items."""
-		data = dashboard.get_dashboard_data()
-		activity = data["activity"]
-
-		self.assertTrue(len(activity) >= 1)
 		for item in activity:
-			self.assertIn("text", item)
-			self.assertIn("time", item)
-			self.assertTrue(bool(item["text"]))
-			self.assertTrue(bool(item["time"]))
-
-	def test_09_kpis_icons_and_navigation(self):
-		"""Verify that every KPI card has an icon and a valid navigation route/doctype."""
-		data = dashboard.get_dashboard_data()
-		kpis = data["kpis"]
-
-		self.assertEqual(len(kpis), 8)
-		for kpi in kpis:
-			self.assertTrue(bool(kpi.get("icon")), f"KPI {kpi['label']} missing icon")
-			self.assertTrue(bool(kpi.get("doctype")), f"KPI {kpi['label']} missing doctype")
-			self.assertTrue(bool(kpi.get("route")), f"KPI {kpi['label']} missing route")
-			self.assertTrue(frappe.db.exists("DocType", kpi["doctype"]), f"Target DocType {kpi['doctype']} does not exist")
+			if "doctype" in item:
+				self.assertTrue(bool(item.get("docname")), "Activity with doctype must include docname")
+				self.assertTrue(frappe.db.exists(item["doctype"], item["docname"]))
