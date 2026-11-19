@@ -1,0 +1,30 @@
+{
+ "content": null,
+ "creation": "2026-11-18 07:55:00.000000",
+ "docstatus": 0,
+ "doctype": "Page",
+ "icon": "tool",
+ "idx": 0,
+ "modified": "2026-11-18 07:55:00.000000",
+ "modified_by": "Administrator",
+ "module": "Construction Management",
+ "name": "construction-work-orders",
+ "owner": "Administrator",
+ "page_name": "construction-work-orders",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Projects Manager"
+  },
+  {
+   "role": "Projects User"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Work Orders"
+}
