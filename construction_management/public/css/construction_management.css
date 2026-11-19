@@ -41,6 +41,34 @@
 	color: var(--gray-600);
 }
 
+.cm-status-draft {
+	background: transparent;
+	color: var(--gray-700, #383838);
+	border: 1px dashed var(--gray-400, #a0aec0);
+}
+
+.cm-status-to-receive-and-bill,
+.cm-status-to-receive {
+	background: var(--bg-blue, #e8f4fc);
+	color: var(--blue-700, #0070cc);
+}
+
+.cm-status-to-bill,
+.cm-status-warning {
+	background: var(--bg-orange, #fff4e5);
+	color: var(--orange-700, #b25e00);
+}
+
+.cm-status-cancelled {
+	background: var(--bg-red, #ffebee);
+	color: var(--red-600, #e53e3e);
+}
+
+.cm-status-closed {
+	background: var(--gray-200, #edf2f7);
+	color: var(--gray-600, #718096);
+}
+
 /* Material statuses */
 .cm-status-active {
 	background: var(--bg-blue);
@@ -353,23 +381,76 @@
 }
 
 /* Daily Progress Report review status pills */
+.cm-status-approved {
+	background: var(--bg-green);
+	color: var(--green-700);
+/* Consolidated status pills (DPR, Material Request, Issue & Purchase Order) */
 .cm-status-draft {
 	background: transparent;
 	color: var(--gray-700);
 	border: 1px solid var(--gray-400);
 }
 
-.cm-status-approved {
-	background: var(--bg-green);
-	color: var(--green-700);
+.cm-status-submitted,
+.cm-status-pending,
+.cm-status-replied,
+.cm-status-to-receive-and-bill,
+.cm-status-to-receive {
+	background: var(--bg-blue);
+	color: var(--blue-700);
 }
 
-.cm-status-revision-requested {
+.cm-status-partially-ordered,
+.cm-status-partially-received,
+.cm-status-revision-requested,
+.cm-status-to-bill,
+.cm-status-warning {
 	background: var(--bg-orange);
 	color: var(--orange-700);
 }
 
+.cm-status-ordered,
+.cm-status-issued,
+.cm-status-transferred,
+.cm-status-received,
+.cm-status-approved,
+.cm-status-resolved {
+	background: var(--bg-green);
+	color: var(--green-700);
+}
+
+.cm-status-stopped,
 .cm-status-cancelled {
 	background: var(--gray-200);
 	color: var(--gray-600);
+}
+
+.cm-status-closed {
+	background: var(--gray-800);
+	color: var(--gray-50);
+}
+
+.cm-issue-priority {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px 8px;
+	border-radius: var(--border-radius-full);
+	font-size: var(--text-xs);
+	font-weight: var(--weight-medium);
+	white-space: nowrap;
+}
+
+.cm-issue-priority-low {
+	background: var(--gray-200);
+	color: var(--gray-700);
+}
+
+.cm-issue-priority-medium {
+	background: var(--bg-orange);
+	color: var(--orange-700);
+}
+
+.cm-issue-priority-high {
+	background: var(--bg-red);
+	color: var(--red-600);
 }

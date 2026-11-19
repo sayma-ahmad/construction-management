@@ -1,0 +1,123 @@
+.cm-issues-page {
+	padding: var(--padding-md) 0 var(--padding-xl);
+}
+
+.cm-issues-card {
+	background: var(--card-bg);
+	border: 1px solid var(--border-color);
+	border-radius: var(--border-radius-lg);
+	box-shadow: var(--card-shadow);
+	min-width: 0;
+}
+
+.cm-issues-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--margin-sm);
+	padding: var(--padding-md) var(--padding-lg);
+	border-bottom: 1px solid var(--border-color);
+}
+
+.cm-issues-count {
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+}
+
+.cm-issues-table-wrapper {
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+}
+
+.cm-issues-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--text-sm);
+}
+
+.cm-issues-table th {
+	color: var(--text-muted);
+	font-weight: var(--weight-medium);
+	text-align: left;
+	white-space: nowrap;
+	padding: var(--padding-sm) var(--padding-lg);
+	border-bottom: 1px solid var(--border-color);
+	background: var(--subtle-fg);
+}
+
+.cm-issues-table td {
+	padding: var(--padding-md) var(--padding-lg);
+	border-bottom: 1px solid var(--border-color);
+	color: var(--text-color);
+	vertical-align: middle;
+}
+
+.cm-issues-table tbody tr:last-child td {
+	border-bottom: none;
+}
+
+.cm-issues-table tbody tr[data-name] {
+	cursor: pointer;
+}
+
+.cm-issues-table tbody tr[data-name]:hover {
+	background: var(--highlight-color);
+}
+
+.cm-issues-id {
+	font-weight: var(--weight-medium);
+	color: var(--heading-color);
+	white-space: nowrap;
+}
+
+.cm-issues-nowrap {
+	white-space: nowrap;
+}
+
+.cm-issues-open {
+	width: 1%;
+	--icon-stroke: var(--gray-500);
+}
+
+.cm-issues-state {
+	text-align: center;
+	color: var(--text-muted);
+	padding: var(--padding-xl) var(--padding-lg) !important;
+}
+
+.cm-issues-state-error {
+	color: var(--red-600);
+}
+
+.cm-issues-state-actions {
+	margin-top: var(--margin-sm);
+}
+
+.cm-issues-pagination {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--margin-sm);
+	padding: var(--padding-sm) var(--padding-lg);
+	border-top: 1px solid var(--border-color);
+}
+
+.cm-issues-pagination-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--margin-xs);
+}
+
+@media (max-width: 768px) {
+	.cm-issues-table th,
+	.cm-issues-table td {
+		padding: var(--padding-sm) var(--padding-md);
+	}
+}
+
+@media (max-width: 575px) {
+	.cm-issues-toolbar,
+	.cm-issues-pagination {
+		flex-wrap: wrap;
+	}
+}

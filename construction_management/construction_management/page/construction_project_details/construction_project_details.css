@@ -186,8 +186,13 @@
 	margin: var(--margin-xs) 0 var(--margin-md);
 }
 
-/* DPR tab */
-.cm-pd-dpr-header {
+/* DPR and Work Orders tabs */
+.cm-pd-dpr-header,
+.cm-pd-wo-header {
+/* DPR, Material Requisitions, and Issues tabs */
+.cm-pd-dpr-header,
+.cm-pd-mr-header,
+.cm-pd-issue-header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -196,28 +201,43 @@
 	margin-bottom: var(--margin-md);
 }
 
-.cm-pd-dpr-header .cm-pd-card-title {
+.cm-pd-dpr-header .cm-pd-card-title,
+.cm-pd-wo-header .cm-pd-card-title {
+.cm-pd-mr-header .cm-pd-card-title,
+.cm-pd-issue-header .cm-pd-card-title {
 	margin-bottom: 0;
 }
 
-.cm-pd-dpr-actions {
+.cm-pd-dpr-actions,
+.cm-pd-wo-actions {
+.cm-pd-mr-actions,
+.cm-pd-issue-actions {
 	display: flex;
 	align-items: center;
 	gap: var(--margin-xs);
 }
 
-.cm-pd-dpr-table-wrap {
+.cm-pd-dpr-table-wrap,
+.cm-pd-wo-table-wrap {
+.cm-pd-mr-table-wrap,
+.cm-pd-issue-table-wrap {
 	overflow-x: auto;
 	-webkit-overflow-scrolling: touch;
 }
 
-.cm-pd-dpr-table {
+.cm-pd-dpr-table,
+.cm-pd-wo-table {
+.cm-pd-mr-table,
+.cm-pd-issue-table {
 	width: 100%;
 	border-collapse: collapse;
 	font-size: var(--text-sm);
 }
 
-.cm-pd-dpr-table th {
+.cm-pd-dpr-table th,
+.cm-pd-wo-table th {
+.cm-pd-mr-table th,
+.cm-pd-issue-table th {
 	color: var(--text-muted);
 	font-weight: var(--weight-medium);
 	text-align: left;
@@ -227,26 +247,41 @@
 	background: var(--subtle-fg);
 }
 
-.cm-pd-dpr-table td {
+.cm-pd-dpr-table td,
+.cm-pd-wo-table td {
+.cm-pd-mr-table td,
+.cm-pd-issue-table td {
 	padding: var(--padding-sm) var(--padding-md);
 	border-bottom: 1px solid var(--border-color);
 	color: var(--text-color);
 	vertical-align: middle;
 }
 
-.cm-pd-dpr-table tbody tr:last-child td {
+.cm-pd-dpr-table tbody tr:last-child td,
+.cm-pd-wo-table tbody tr:last-child td {
+.cm-pd-mr-table tbody tr:last-child td,
+.cm-pd-issue-table tbody tr:last-child td {
 	border-bottom: none;
 }
 
-.cm-pd-dpr-table tbody tr[data-dpr] {
+.cm-pd-dpr-table tbody tr[data-dpr],
+.cm-pd-wo-table tbody tr[data-work-order] {
+.cm-pd-mr-table tbody tr[data-material-request],
+.cm-pd-issue-table tbody tr[data-issue] {
 	cursor: pointer;
 }
 
-.cm-pd-dpr-table tbody tr[data-dpr]:hover {
+.cm-pd-dpr-table tbody tr[data-dpr]:hover,
+.cm-pd-wo-table tbody tr[data-work-order]:hover {
+.cm-pd-mr-table tbody tr[data-material-request]:hover,
+.cm-pd-issue-table tbody tr[data-issue]:hover {
 	background: var(--highlight-color);
 }
 
-.cm-pd-dpr-id {
+.cm-pd-dpr-id,
+.cm-pd-wo-id {
+.cm-pd-mr-id,
+.cm-pd-issue-id {
 	font-weight: var(--weight-medium);
 	color: var(--heading-color);
 	white-space: nowrap;
