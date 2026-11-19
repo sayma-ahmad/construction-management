@@ -86,10 +86,12 @@ required_apps = ["erpnext"]
 after_install = [
 	"construction_management.materials.setup",
 	"construction_management.vendors.setup",
+	"construction_management.grn.setup",
 ]
 after_migrate = [
 	"construction_management.materials.setup",
 	"construction_management.vendors.setup",
+	"construction_management.grn.setup",
 ]
 
 # Uninstallation
@@ -150,6 +152,9 @@ doc_events = {
 	},
 	"Supplier": {
 		"validate": "construction_management.vendors.validate_supplier",
+	},
+	"Purchase Receipt": {
+		"validate": "construction_management.grn.validate_purchase_receipt",
 	},
 }
 

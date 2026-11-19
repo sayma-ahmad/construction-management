@@ -12,7 +12,7 @@
  "is_hidden": 0,
  "label": "Construction Management",
  "links": [],
- "modified": "2026-11-17 12:00:00.000000",
+ "modified": "2026-11-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Construction Management",
  "name": "Construction Management",
@@ -108,11 +108,10 @@
   },
   {
    "color": "Grey",
-   "doc_view": "List",
    "icon": "clipboard",
    "label": "GRN",
-   "link_to": "Purchase Receipt",
-   "type": "DocType"
+   "link_to": "construction-grn",
+   "type": "Page"
   },
   {
    "color": "Grey",
