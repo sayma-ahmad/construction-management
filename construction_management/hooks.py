@@ -90,12 +90,14 @@ after_install = [
 	"construction_management.vendors.setup",
 	"construction_management.construction_management.material_request.setup",
 	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
+	"construction_management.grn.setup",
 ]
 after_migrate = [
 	"construction_management.materials.setup",
 	"construction_management.vendors.setup",
 	"construction_management.construction_management.material_request.setup",
 	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
+	"construction_management.grn.setup",
 ]
 
 # Uninstallation
@@ -162,6 +164,8 @@ doc_events = {
 	},
 	"Issue": {
 		"validate": "construction_management.construction_management.issue.validate_construction_issue",
+	"Purchase Receipt": {
+		"validate": "construction_management.grn.validate_purchase_receipt",
 	},
 }
 

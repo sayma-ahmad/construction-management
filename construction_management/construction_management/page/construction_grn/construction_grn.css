@@ -1,0 +1,26 @@
+.cm-grn {
+	padding: var(--padding-md) 0 var(--padding-xl);
+}
+
+.cm-grn .cm-status-to-bill {
+	background: var(--bg-blue);
+	color: var(--blue-700);
+}
+
+.cm-grn .cm-status-partly-billed {
+	background: transparent;
+	color: var(--blue-700);
+	border: 1px solid var(--blue-700);
+}
+
+.cm-grn .cm-status-return,
+.cm-grn .cm-status-return-issued,
+.cm-grn .cm-status-closed {
+	background: var(--gray-200);
+	color: var(--gray-700);
+}
+
+.cm-grn-qty {
+	text-align: right;
+	white-space: nowrap;
+}
