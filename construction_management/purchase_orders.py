@@ -55,17 +55,6 @@ PO_CUSTOM_FIELDS = {
 			"insert_after": "cm_material_type",
 		},
 	],
-	"Material Request": [
-		{
-			"fieldname": "cm_project",
-			"fieldtype": "Link",
-			"options": "Project",
-			"label": "Construction Project",
-			"insert_after": "customer",
-			"in_standard_filter": 1,
-			"in_list_view": 1,
-		},
-	],
 }
 
 
@@ -96,9 +85,40 @@ def setup():
 		})
 
 
+def get_remaining_qty_for_mr_item(mr_item_name, exclude_po_name=None):
+	"""Calculate remaining available quantity for a Material Request item across draft and submitted POs."""
+	mr_item = frappe.db.get_value(
+		"Material Request Item",
+		mr_item_name,
+		["qty", "parent", "item_code"],
+		as_dict=True,
+	)
+	if not mr_item:
+		return 0.0
+
+	conditions = ["poi.material_request_item = %s", "po.docstatus IN (0, 1)"]
+	args = [mr_item_name]
+
+	if exclude_po_name:
+		conditions.append("po.name != %s")
+		args.append(exclude_po_name)
+
+	allocated = frappe.db.sql(
+		f"""
+		SELECT COALESCE(SUM(poi.qty), 0)
+		FROM `tabPurchase Order Item` poi
+		INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
+		WHERE {' AND '.join(conditions)}
+		""",
+		args,
+	)[0][0]
+
+	return max(0.0, flt(mr_item.qty) - flt(allocated))
+
+
 def validate_purchase_order(doc, method=None):
-	"""Purchase Order validate hook: ensure project reference consistency and line item propagation."""
-	# Ensure project is set on doc
+	"""Purchase Order validate hook: enforce project sync, MR status, and quantity limits."""
+	# Ensure project is synchronized between custom cm_project and standard project
 	if doc.get("cm_project") and not doc.get("project"):
 		doc.project = doc.cm_project
 	elif doc.get("project") and doc.meta.has_field("cm_project"):
@@ -106,18 +126,75 @@ def validate_purchase_order(doc, method=None):
 
 	project = doc.get("project") or doc.get("cm_project")
 
+	# Validate linked Material Requests (header or items)
+	linked_mrs = set()
+	if doc.get("cm_material_request"):
+		linked_mrs.add(doc.get("cm_material_request"))
 	for item in doc.get("items", []):
+		if item.get("material_request"):
+			linked_mrs.add(item.get("material_request"))
+
+	for mr_name in linked_mrs:
+		if not frappe.db.exists("Material Request", mr_name):
+			frappe.throw(_("Material Request {0} not found.").format(mr_name))
+
+		mr = frappe.db.get_value(
+			"Material Request",
+			mr_name,
+			["docstatus", "material_request_type", "status"]
+			+ (["cm_project"] if frappe.db.has_column("Material Request", "cm_project") else []),
+			as_dict=True,
+		)
+		if mr.docstatus != 1:
+			frappe.throw(
+				_("Material Request {0} is not submitted. Only submitted Material Requests can be linked to Purchase Orders.").format(mr_name)
+			)
+		if mr.material_request_type != "Purchase":
+			frappe.throw(
+				_("Material Request {0} is of type {1}. Only 'Purchase' type Material Requests can be linked to Purchase Orders.").format(
+					mr_name, mr.material_request_type
+				)
+			)
+		if mr.status in ("Stopped", "Cancelled"):
+			frappe.throw(
+				_("Material Request {0} is {1} and cannot be processed.").format(mr_name, mr.status)
+			)
+
+		mr_project = mr.get("cm_project")
+		if not mr_project:
+			# Look up project from child items
+			mr_project = frappe.db.get_value(
+				"Material Request Item",
+				{"parent": mr_name, "project": ["is", "set"]},
+				"project",
+			)
+		if mr_project and project and mr_project != project:
+			frappe.throw(
+				_("Material Request {0} belongs to Project {1}, which does not match Purchase Order Project {2}.").format(
+					mr_name, mr_project, project
+				)
+			)
+
+	# Aggregate quantities in current PO by material_request_item to handle split rows
+	current_po_item_qtys = {}
+	for idx, item in enumerate(doc.get("items", []), start=1):
 		# Validate positive quantity
 		if flt(item.get("qty", 0)) <= 0:
 			frappe.throw(
 				_("Row #{0}: Quantity must be greater than zero for item {1}").format(
-					item.idx or 1, frappe.bold(item.get("item_code") or "")
+					item.idx or idx, frappe.bold(item.get("item_code") or "")
 				)
 			)
 
 		# Sync project down to item lines for ERPNext accounting & cost tracking
 		if project and not item.get("project"):
 			item.project = project
+		elif item.get("project") and project and item.get("project") != project:
+			frappe.throw(
+				_("Row #{0}: Item Project {1} does not match Purchase Order Project {2}.").format(
+					item.idx or idx, item.get("project"), project
+				)
+			)
 
 		# Auto-populate construction material type and grade from Item master if not set
 		if item.get("item_code") and (not item.get("cm_material_type") or not item.get("cm_material_grade")):
@@ -129,15 +206,59 @@ def validate_purchase_order(doc, method=None):
 			if mat_grade and not item.get("cm_material_grade"):
 				item.cm_material_grade = mat_grade
 
+		# Auto-link material_request_item if material_request is present but item row is not set
+		if item.get("material_request") and not item.get("material_request_item"):
+			item.material_request_item = frappe.db.get_value(
+				"Material Request Item",
+				{"parent": item.material_request, "item_code": item.item_code},
+				"name",
+			)
+
+		mri = item.get("material_request_item")
+		if mri:
+			current_po_item_qtys[mri] = current_po_item_qtys.get(mri, 0.0) + flt(item.get("qty", 0))
+
+	# Validate remaining quantities against Material Request items across other draft & submitted POs
+	for mri, total_qty in current_po_item_qtys.items():
+		mr_item_data = frappe.db.get_value(
+			"Material Request Item",
+			mri,
+			["qty", "parent", "item_code"],
+			as_dict=True,
+		)
+		if not mr_item_data:
+			continue
+
+		rem_allowed = get_remaining_qty_for_mr_item(mri, exclude_po_name=doc.name)
+		if rem_allowed <= 0.0:
+			frappe.throw(
+				_("Item {0} on Material Request {1} has already been fully ordered in other Purchase Orders.").format(
+					mr_item_data.item_code, mr_item_data.parent
+				),
+				frappe.ValidationError,
+			)
+		if total_qty > rem_allowed:
+			frappe.throw(
+				_("Total quantity {0} for item {1} exceeds remaining allowed quantity ({2}) on Material Request {3}.").format(
+					total_qty, mr_item_data.item_code, rem_allowed, mr_item_data.parent
+				),
+				frappe.ValidationError,
+			)
+
 
 @frappe.whitelist()
-def get_purchase_orders(project=None, status=None, supplier=None, search=None):
-	"""Return purchase orders formatted for the Construction Management procurement screen."""
+def get_purchase_orders(project=None, status=None, supplier=None, search=None, start=0, page_length=20):
+	"""Return purchase orders formatted for the Construction Management procurement screen with permissions and pagination."""
 	if not frappe.has_permission("Purchase Order", "read"):
 		frappe.throw(_("Not permitted to view Purchase Orders"), frappe.PermissionError)
 
+	start = max(0, frappe.utils.cint(start))
+	page_length = min(max(1, frappe.utils.cint(page_length) or 20), 100)
+
 	filters = {}
 	if project:
+		if not frappe.has_permission("Project", "read", project):
+			frappe.throw(_("Not permitted to access Project {0}").format(project), frappe.PermissionError)
 		filters["project"] = project
 	if status:
 		filters["status"] = status
@@ -163,16 +284,43 @@ def get_purchase_orders(project=None, status=None, supplier=None, search=None):
 	if frappe.db.has_column("Purchase Order", "cm_project"):
 		fields.append("cm_project")
 
-	orders = frappe.get_all(
+	or_filters = None
+	if search:
+		term = search.strip()
+		like = f"%{term}%"
+		or_filters = [
+			["Purchase Order", "name", "like", like],
+			["Purchase Order", "supplier", "like", like],
+			["Purchase Order", "supplier_name", "like", like],
+			["Purchase Order", "project", "like", like],
+		]
+
+	# Use frappe.get_list to enforce role and User Permissions
+	orders = frappe.get_list(
 		"Purchase Order",
 		filters=filters,
+		or_filters=or_filters,
 		fields=fields,
 		order_by="modified desc",
-		limit=200,
+		start=start,
+		page_length=page_length,
 	)
 
+	count_rows = frappe.get_list(
+		"Purchase Order",
+		filters=filters,
+		or_filters=or_filters,
+		fields=["count(name) as total"],
+	)
+	total = count_rows[0].total if count_rows else len(orders)
+
 	if not orders:
-		return []
+		return {
+			"orders": [],
+			"total": 0,
+			"start": start,
+			"page_length": page_length,
+		}
 
 	po_names = [po.name for po in orders]
 	items = frappe.get_all(
@@ -203,12 +351,6 @@ def get_purchase_orders(project=None, status=None, supplier=None, search=None):
 		if not mr_ref and po_items and po_items[0].get("material_request"):
 			mr_ref = po_items[0]["material_request"]
 
-		if search:
-			q = search.lower()
-			searchable = f"{po.name} {po.supplier_name or ''} {proj_ref} {proj_name} {items_summary}".lower()
-			if q not in searchable:
-				continue
-
 		result.append(
 			{
 				"name": po.name,
@@ -230,7 +372,12 @@ def get_purchase_orders(project=None, status=None, supplier=None, search=None):
 			}
 		)
 
-	return result
+	return {
+		"orders": result,
+		"total": total,
+		"start": start,
+		"page_length": page_length,
+	}
 
 
 @frappe.whitelist()
@@ -239,40 +386,44 @@ def get_material_requests_for_project(project=None):
 	if not frappe.has_permission("Material Request", "read"):
 		frappe.throw(_("Not permitted to view Material Requests"), frappe.PermissionError)
 
-	# Must be Purchase type, submitted (docstatus=1), and not stopped/cancelled/fully ordered
-	filters = {
-		"material_request_type": "Purchase",
-		"docstatus": 1,
-		"status": ["not in", ["Stopped", "Cancelled", "Ordered"]],
-		"per_ordered": ["<", 99.99],
-	}
+	if project and not frappe.has_permission("Project", "read", project):
+		frappe.throw(_("Not permitted to access Project {0}").format(project), frappe.PermissionError)
+
+	filters = [
+		["Material Request", "material_request_type", "=", "Purchase"],
+		["Material Request", "docstatus", "=", 1],
+		["Material Request", "status", "not in", ["Stopped", "Cancelled", "Ordered"]],
+	]
+
 	if project:
-		# Material Request may link to project via item-level project or header cm_project
-		mr_from_items = frappe.db.sql_list(
-			"""SELECT DISTINCT parent FROM `tabMaterial Request Item` WHERE project = %s""",
-			(project,),
-		)
-		mr_from_header = []
+		matching_names = set()
 		if frappe.db.has_column("Material Request", "cm_project"):
-			mr_from_header = frappe.db.sql_list(
-				"""SELECT name FROM `tabMaterial Request` WHERE cm_project = %s""",
-				(project,),
+			matching_names.update(
+				frappe.get_list("Material Request", filters={"cm_project": project}, pluck="name", limit_page_length=0)
 			)
-		matching_names = list(set(mr_from_items + mr_from_header))
+		matching_names.update(
+			frappe.get_list(
+				"Material Request",
+				filters=[["Material Request Item", "project", "=", project]],
+				pluck="name",
+				distinct=True,
+				limit_page_length=0,
+			)
+		)
 		if not matching_names:
 			return []
-		filters["name"] = ["in", matching_names]
+		filters.append(["Material Request", "name", "in", list(matching_names)])
 
 	fields = ["name", "transaction_date", "schedule_date", "status", "per_ordered"]
 	if frappe.db.has_column("Material Request", "cm_project"):
 		fields.append("cm_project")
 
-	requests = frappe.get_all(
+	requests = frappe.get_list(
 		"Material Request",
 		filters=filters,
 		fields=fields,
 		order_by="modified desc",
-		limit=100,
+		limit_page_length=100,
 	)
 
 	valid_requests = []
@@ -282,15 +433,14 @@ def get_material_requests_for_project(project=None):
 			filters={"parent": mr.name},
 			fields=["name", "item_code", "item_name", "qty", "ordered_qty", "stock_uom", "project"],
 		)
-		# Calculate remaining quantities
+		# Calculate remaining quantities taking both draft and submitted POs into account
 		unfulfilled_items = []
 		for it in items:
-			rem_qty = max(0.0, flt(it.qty) - flt(it.ordered_qty))
+			rem_qty = get_remaining_qty_for_mr_item(it.name)
 			if rem_qty > 0:
 				it["remaining_qty"] = rem_qty
 				unfulfilled_items.append(it)
 
-		# Only include MRs that still have unfulfilled items
 		if not unfulfilled_items:
 			continue
 
@@ -309,22 +459,36 @@ def get_material_request_details(material_request):
 	if not frappe.has_permission("Material Request", "read"):
 		frappe.throw(_("Not permitted to view Material Requests"), frappe.PermissionError)
 
+	if not frappe.has_permission("Material Request", "read", material_request):
+		frappe.throw(
+			_("Not permitted to view Material Request {0}").format(material_request),
+			frappe.PermissionError,
+		)
+
 	if not frappe.db.exists("Material Request", material_request):
 		frappe.throw(_("Material Request {0} not found").format(material_request))
 
 	mr = frappe.get_doc("Material Request", material_request)
 	if mr.docstatus != 1:
 		frappe.throw(_("Material Request {0} is not submitted").format(material_request))
+	if mr.material_request_type != "Purchase":
+		frappe.throw(_("Material Request {0} is not of type Purchase").format(material_request))
+	if mr.status in ("Stopped", "Cancelled"):
+		frappe.throw(_("Material Request {0} is {1} and cannot be processed").format(material_request, mr.status))
+
+	project = mr.get("cm_project") or ""
+	if not project:
+		for it in mr.items:
+			if it.get("project"):
+				project = it.project
+				break
+
+	if project and not frappe.has_permission("Project", "read", project):
+		frappe.throw(_("Not permitted to access Project {0}").format(project), frappe.PermissionError)
 
 	items = []
-	project = mr.get("cm_project") or ""
 	for it in mr.items:
-		if not project and it.get("project"):
-			project = it.project
-
-		requested_qty = flt(it.qty)
-		ordered_qty = flt(it.ordered_qty)
-		remaining_qty = max(0.0, requested_qty - ordered_qty)
+		remaining_qty = get_remaining_qty_for_mr_item(it.name)
 
 		# Only return items that still have remaining quantity to order
 		if remaining_qty > 0:
@@ -333,8 +497,8 @@ def get_material_request_details(material_request):
 					"item_code": it.item_code,
 					"item_name": it.item_name,
 					"qty": remaining_qty,
-					"requested_qty": requested_qty,
-					"ordered_qty": ordered_qty,
+					"requested_qty": flt(it.qty),
+					"ordered_qty": flt(it.ordered_qty),
 					"remaining_qty": remaining_qty,
 					"stock_uom": it.stock_uom,
 					"rate": flt(it.rate),
@@ -392,6 +556,12 @@ def create_construction_purchase_order(
 
 	if frappe.utils.cint(submit) and not frappe.has_permission("Purchase Order", "submit"):
 		frappe.throw(_("Not permitted to submit Purchase Orders"), frappe.PermissionError)
+
+	if project and not frappe.has_permission("Project", "read", project):
+		frappe.throw(_("Not permitted to access Project {0}").format(project), frappe.PermissionError)
+
+	if material_request and not frappe.has_permission("Material Request", "read", material_request):
+		frappe.throw(_("Not permitted to access Material Request {0}").format(material_request), frappe.PermissionError)
 
 	if isinstance(items, str):
 		items = json.loads(items)
@@ -478,27 +648,6 @@ def create_construction_purchase_order(
 			row["material_request"] = mr_ref
 		if mr_item_ref:
 			row["material_request_item"] = mr_item_ref
-			# Validate that order quantity does not exceed remaining requested quantity
-			mr_item_data = frappe.db.get_value(
-				"Material Request Item",
-				mr_item_ref,
-				["qty", "ordered_qty"],
-				as_dict=True,
-			)
-			if mr_item_data:
-				rem_qty = max(0.0, flt(mr_item_data.qty) - flt(mr_item_data.ordered_qty))
-				if rem_qty <= 0:
-					frappe.throw(
-						_("Item {0} has already been fully ordered on Material Request {1}").format(
-							it.get("item_code"), mr_ref
-						)
-					)
-				if qty > rem_qty:
-					frappe.throw(
-						_("Quantity {0} for item {1} exceeds remaining requested quantity ({2}) on Material Request {3}").format(
-							qty, it.get("item_code"), rem_qty, mr_ref
-						)
-					)
 
 		po.append("items", row)
 

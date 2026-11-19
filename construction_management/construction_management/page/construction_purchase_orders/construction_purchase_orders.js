@@ -38,6 +38,8 @@ class PurchaseOrderList {
 		this.orders = [];
 		this.projects = [];
 		this.suppliers = [];
+		this.current_page = 1;
+		this.page_length = 20;
 
 		if (frappe.model.can_create("Purchase Order")) {
 			page.set_primary_action(
@@ -58,7 +60,10 @@ class PurchaseOrderList {
 			label: __("Search PO ID, vendor or project"),
 			fieldtype: "Data",
 		});
-		this.search.$input.on("input", frappe.utils.debounce(() => this.render(), 200));
+		this.search.$input.on("input", frappe.utils.debounce(() => {
+			this.current_page = 1;
+			this.render();
+		}, 200));
 		$(this.search.wrapper).removeClass("col-md-2").addClass("col-md-3");
 
 		this.project = this.page.add_field({
@@ -66,7 +71,10 @@ class PurchaseOrderList {
 			label: __("Project"),
 			fieldtype: "Select",
 			options: [""],
-			change: () => this.render(),
+			change: () => {
+				this.current_page = 1;
+				this.render();
+			},
 		});
 
 		this.status = this.page.add_field({
@@ -74,7 +82,10 @@ class PurchaseOrderList {
 			label: __("Status"),
 			fieldtype: "Select",
 			options: ["", ...CM_PO_STATUSES],
-			change: () => this.render(),
+			change: () => {
+				this.current_page = 1;
+				this.render();
+			},
 		});
 
 		this.supplier = this.page.add_field({
@@ -82,7 +93,10 @@ class PurchaseOrderList {
 			label: __("Vendor / Supplier"),
 			fieldtype: "Select",
 			options: [""],
-			change: () => this.render(),
+			change: () => {
+				this.current_page = 1;
+				this.render();
+			},
 		});
 	}
 
@@ -151,6 +165,13 @@ class PurchaseOrderList {
 							<tbody></tbody>
 						</table>
 					</div>
+					<div class="cm-po-pagination d-flex align-items-center justify-content-between p-3 border-top">
+						<div class="text-muted small cm-po-pagination-info"></div>
+						<div class="btn-group">
+							<button class="btn btn-xs btn-default cm-po-prev">${__("Previous")}</button>
+							<button class="btn btn-xs btn-default cm-po-next">${__("Next")}</button>
+						</div>
+					</div>
 				</div>
 			</div>
 		`).appendTo(this.page.main);
@@ -164,7 +185,24 @@ class PurchaseOrderList {
 			this.project.set_value("");
 			this.status.set_value("");
 			this.supplier.set_value("");
+			this.current_page = 1;
 			this.render();
+		});
+
+		this.$wrapper.find(".cm-po-prev").on("click", () => {
+			if (this.current_page > 1) {
+				this.current_page--;
+				this.render();
+			}
+		});
+
+		this.$wrapper.find(".cm-po-next").on("click", () => {
+			const filtered = this.get_filtered();
+			const total_pages = Math.ceil(filtered.length / this.page_length) || 1;
+			if (this.current_page < total_pages) {
+				this.current_page++;
+				this.render();
+			}
 		});
 	}
 
@@ -174,8 +212,19 @@ class PurchaseOrderList {
 		try {
 			const res = await frappe.call({
 				method: "construction_management.purchase_orders.get_purchase_orders",
+				args: {
+					start: 0,
+					page_length: 500,
+				},
 			});
-			this.orders = res.message || [];
+			const data = res.message;
+			if (Array.isArray(data)) {
+				this.orders = data;
+			} else if (data && data.orders) {
+				this.orders = data.orders;
+			} else {
+				this.orders = [];
+			}
 
 			// Populate filter dropdowns dynamically
 			const projects = [...new Set(this.orders.map((po) => po.project).filter(Boolean))].sort();
@@ -228,6 +277,14 @@ class PurchaseOrderList {
 		this.$wrapper.find(".cm-kpi-spend").text(format_currency(totalVal, currency, 0));
 		this.$wrapper.find(".cm-kpi-receipts").text(pendingReceipts);
 
+		const total_records = filtered.length;
+		const total_pages = Math.ceil(total_records / this.page_length) || 1;
+		if (this.current_page > total_pages) this.current_page = total_pages;
+		if (this.current_page < 1) this.current_page = 1;
+
+		const start_idx = (this.current_page - 1) * this.page_length;
+		const page_records = filtered.slice(start_idx, start_idx + this.page_length);
+
 		this.$wrapper
 			.find(".cm-tasks-count")
 			.text(__("Showing {0} of {1} Purchase Orders", [filtered.length, this.orders.length]));
@@ -246,10 +303,27 @@ class PurchaseOrderList {
 					? __("No purchase orders match the selected filters.")
 					: __("No purchase orders found. Click 'New Purchase Order' to create one.")
 			);
+			this.$wrapper.find(".cm-po-pagination").hide();
 			return;
 		}
 
-		this.$wrapper.find("tbody").html(filtered.map(po_row).join(""));
+		this.$wrapper.find(".cm-po-pagination").show();
+		this.$wrapper
+			.find(".cm-po-pagination-info")
+			.text(
+				__("Showing {0}-{1} of {2} (Page {3} of {4})", [
+					start_idx + 1,
+					Math.min(start_idx + this.page_length, total_records),
+					total_records,
+					this.current_page,
+					total_pages,
+				])
+			);
+
+		this.$wrapper.find(".cm-po-prev").prop("disabled", this.current_page <= 1);
+		this.$wrapper.find(".cm-po-next").prop("disabled", this.current_page >= total_pages);
+
+		this.$wrapper.find("tbody").html(page_records.map(po_row).join(""));
 	}
 
 	show_message(message) {
@@ -527,8 +601,8 @@ class PurchaseOrderList {
 			$c.find(`tbody tr:eq(${idx}) .cm-po-item-amount`).text(format_currency(amt));
 		}
 
-		// Initialize with one default item row
-		items = [{ item_code: "CM-CEM-001", item_name: "OPC Cement 53 Grade", qty: 100, rate: 380, stock_uom: "Bag" }];
+		// Start with empty items list; user selects from Material Request or adds items manually
+		items = [];
 		dialog.show();
 		render_dialog_items();
 	}

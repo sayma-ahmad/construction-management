@@ -115,3 +115,16 @@
 	font-weight: 600;
 	color: #475569;
 }
+
+@media (max-width: 991px) {
+	.cm-po-kpi-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 575px) {
+	.cm-po-kpi-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
