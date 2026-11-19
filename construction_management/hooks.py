@@ -88,6 +88,7 @@ doctype_js = {
 after_install = [
 	"construction_management.materials.setup",
 	"construction_management.vendors.setup",
+	"construction_management.purchase_orders.setup",
 	"construction_management.construction_management.material_request.setup",
 	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
 	"construction_management.grn.setup",
@@ -95,6 +96,7 @@ after_install = [
 after_migrate = [
 	"construction_management.materials.setup",
 	"construction_management.vendors.setup",
+	"construction_management.purchase_orders.setup",
 	"construction_management.construction_management.material_request.setup",
 	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
 	"construction_management.grn.setup",
@@ -159,6 +161,8 @@ doc_events = {
 	"Supplier": {
 		"validate": "construction_management.vendors.validate_supplier",
 	},
+	"Purchase Order": {
+		"validate": "construction_management.purchase_orders.validate_purchase_order",
 	"Material Request": {
 		"validate": "construction_management.construction_management.material_request.validate_construction_material_request",
 	},
