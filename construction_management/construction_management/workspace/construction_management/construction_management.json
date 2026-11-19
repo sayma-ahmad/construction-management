@@ -253,11 +253,10 @@
   },
   {
    "color": "Grey",
-   "doc_view": "List",
    "icon": "tool",
    "label": "Work Orders",
-   "link_to": "Work Order",
-   "type": "DocType"
+   "link_to": "construction-work-orders",
+   "type": "Page"
   }
  ],
  "title": "Construction Management"
