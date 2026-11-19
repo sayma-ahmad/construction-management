@@ -13,11 +13,13 @@ frappe.pages["construction-work-orders"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
-	page.set_primary_action(
-		__("New Work Order"),
-		() => frappe.new_doc("Construction Work Order"),
-		"add"
-	);
+	if (frappe.model.can_create("Construction Work Order")) {
+		page.set_primary_action(
+			__("New Work Order"),
+			() => frappe.new_doc("Construction Work Order"),
+			"add"
+		);
+	}
 	page.set_secondary_action(__("Refresh"), () => wrapper.work_order_list?.fetch());
 
 	frappe.require(CM_WO_PAGE_ASSETS, () => {

@@ -440,6 +440,7 @@ class ProjectDetails {
 
 	render_work_orders_panel($panel, mapped_project, work_orders) {
 		const esc = frappe.utils.escape_html;
+		const can_create_wo = frappe.model.can_create("Construction Work Order");
 
 		if (!mapped_project) {
 			$panel.html(`
@@ -469,7 +470,7 @@ class ProjectDetails {
 					const contractor_label = row.contractor_name || row.contractor || "";
 					return `
 							<tr data-work-order="${esc(row.name)}" title="${__("Open Work Order")}">
-								<td class="cm-pd-dpr-id">${esc(row.name)}</td>
+								<td class="cm-pd-wo-id">${esc(row.name)}</td>
 								<td>${esc(row.title || "")}</td>
 								<td>${esc(contractor_label)}</td>
 								<td><span class="cm-status cm-status-${status_class}">${__(status)}</span></td>
@@ -484,15 +485,15 @@ class ProjectDetails {
 
 		$panel.html(`
 			<div class="cm-pd-card">
-				<div class="cm-pd-dpr-header">
+				<div class="cm-pd-wo-header">
 					<div class="cm-pd-card-title">${__("Work Orders")}</div>
-					<div class="cm-pd-dpr-actions">
+					<div class="cm-pd-wo-actions">
 						<button class="btn btn-xs btn-default cm-pd-open-work-orders">${__("View All")}</button>
-						<button class="btn btn-xs btn-primary cm-pd-new-work-order">${__("New Work Order")}</button>
+						${can_create_wo ? `<button class="btn btn-xs btn-primary cm-pd-new-work-order">${__("New Work Order")}</button>` : ""}
 					</div>
 				</div>
-				<div class="cm-pd-dpr-table-wrap">
-					<table class="cm-pd-dpr-table">
+				<div class="cm-pd-wo-table-wrap">
+					<table class="cm-pd-wo-table">
 						<thead>
 							<tr>
 								<th>${__("Work Order ID")}</th>
@@ -511,9 +512,11 @@ class ProjectDetails {
 		$panel
 			.find(".cm-pd-open-work-orders")
 			.on("click", () => frappe.set_route("construction-work-orders"));
-		$panel
-			.find(".cm-pd-new-work-order")
-			.on("click", () => frappe.new_doc("Construction Work Order", { project: mapped_project }));
+		if (can_create_wo) {
+			$panel
+				.find(".cm-pd-new-work-order")
+				.on("click", () => frappe.new_doc("Construction Work Order", { project: mapped_project }));
+		}
 		$panel
 			.off("click", "tbody tr[data-work-order]")
 			.on("click", "tbody tr[data-work-order]", (e) => {
