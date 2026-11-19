@@ -43,7 +43,9 @@ required_apps = ["erpnext"]
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"Material Request": "public/js/material_request.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -86,11 +88,15 @@ required_apps = ["erpnext"]
 after_install = [
 	"construction_management.materials.setup",
 	"construction_management.vendors.setup",
+	"construction_management.construction_management.material_request.setup",
+	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
 	"construction_management.grn.setup",
 ]
 after_migrate = [
 	"construction_management.materials.setup",
 	"construction_management.vendors.setup",
+	"construction_management.construction_management.material_request.setup",
+	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
 	"construction_management.grn.setup",
 ]
 
@@ -153,10 +159,35 @@ doc_events = {
 	"Supplier": {
 		"validate": "construction_management.vendors.validate_supplier",
 	},
+	"Material Request": {
+		"validate": "construction_management.construction_management.material_request.validate_construction_material_request",
+	},
+	"Issue": {
+		"validate": "construction_management.construction_management.issue.validate_construction_issue",
 	"Purchase Receipt": {
 		"validate": "construction_management.grn.validate_purchase_receipt",
 	},
 }
+
+fixtures = [
+	{
+		"dt": "Custom Field",
+		"filters": [["dt", "=", "Material Request"], ["module", "=", "Construction Management"]],
+	},
+	{
+		"dt": "Custom DocPerm",
+		"filters": [
+			["parent", "in", ["Material Request", "Item", "Issue", "Issue Type", "Issue Priority"]],
+			["role", "in", ["Projects Manager", "Projects User"]],
+		],
+	},
+	{
+		"dt": "Issue Type",
+		"filters": [
+			["name", "in", ["Safety", "Quality", "Material", "Equipment", "Design", "Delay", "Other"]]
+		],
+	},
+]
 
 # Scheduled Tasks
 # ---------------

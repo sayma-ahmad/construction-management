@@ -1,0 +1,37 @@
+[
+ {
+  "description": "Site safety hazards, PPE compliance, and incident reports.",
+  "doctype": "Issue Type",
+  "name": "Safety"
+ },
+ {
+  "description": "Workmanship, material testing, and QA/QC non-conformance.",
+  "doctype": "Issue Type",
+  "name": "Quality"
+ },
+ {
+  "description": "Material shortages, damaged deliveries, or specification issues.",
+  "doctype": "Issue Type",
+  "name": "Material"
+ },
+ {
+  "description": "Machinery breakdowns, availability, or maintenance delays.",
+  "doctype": "Issue Type",
+  "name": "Equipment"
+ },
+ {
+  "description": "Drawing discrepancies, RFI clarifications, and design changes.",
+  "doctype": "Issue Type",
+  "name": "Design"
+ },
+ {
+  "description": "Schedule slippages, weather disruptions, or dependency blocks.",
+  "doctype": "Issue Type",
+  "name": "Delay"
+ },
+ {
+  "description": "General site issues not covered by other categories.",
+  "doctype": "Issue Type",
+  "name": "Other"
+ }
+]
