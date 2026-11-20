@@ -5,9 +5,14 @@ import json
 import frappe
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
-from frappe.utils import cint, flt, getdate, nowdate, nowtime
+from frappe.utils import cint, flt, nowdate, nowtime
 
 from construction_management import materials
+from construction_management.demo_data import ITEM_RATES
+
+SAMPLE_RECEIPT_MARKER = "[CM-INV:SAMPLE-RECEIPT]"
+SAMPLE_TRANSFER_MARKER = "[CM-INV:SAMPLE-TRANSFER]"
+MAX_TRANSFER_ROWS = 100
 
 # Standard Construction Warehouse configurations
 STANDARD_WAREHOUSES = [
@@ -129,20 +134,41 @@ def setup_warehouses(company=None):
 	return created
 
 
+def _check_stock_read():
+	"""Stock balances (Bin) and materials (Item) must both be readable by the user."""
+	if frappe.session.user == "Guest" or not (
+		frappe.has_permission("Bin", "read") and frappe.has_permission("Item", "read")
+	):
+		frappe.throw(_("Not permitted to view stock balances"), frappe.PermissionError)
+
+
+def _resolve_company(company=None):
+	return (
+		company
+		or frappe.defaults.get_user_default("Company")
+		or frappe.db.get_default("company")
+		or frappe.db.get_value("Company", {}, "name")
+	)
+
+
+def _permitted_warehouses(company=None, warehouse=None):
+	"""Non-group warehouses of the company that the user may read (User Permissions apply)."""
+	filters = {"is_group": 0}
+	if company:
+		filters["company"] = company
+	names = frappe.get_list("Warehouse", filters=filters, pluck="name", limit_page_length=0)
+	if warehouse:
+		if warehouse not in names:
+			frappe.throw(_("Not permitted to view Warehouse {0}").format(warehouse), frappe.PermissionError)
+		return [warehouse]
+	return names
+
+
 @frappe.whitelist()
 def get_inventory_summary(company=None, warehouse=None, item_group=None, material_type=None, search=None, status=None):
 	"""Subtasks 2 & 3: Fetch inventory list, stock summary, material quantities, and availability."""
-	if frappe.session.user == "Guest":
-		frappe.throw(_("Authentication required"), frappe.PermissionError)
-
-	if not frappe.has_permission("Item", "read"):
-		frappe.throw(_("Permission denied to view inventory materials"), frappe.PermissionError)
-
-	if not company:
-		company = frappe.defaults.get_user_default("Company") or frappe.db.get_default("company")
-	if not company:
-		company = frappe.db.get_value("Company", {}, "name")
-
+	_check_stock_read()
+	company = _resolve_company(company)
 	currency = frappe.get_cached_value("Company", company, "default_currency") or "INR"
 
 	# Build base item filters for active construction materials
@@ -185,17 +211,11 @@ def get_inventory_summary(company=None, warehouse=None, item_group=None, materia
 		}
 
 	item_codes = [it.name for it in items]
-
-	# Fetch Bins for these items in batch
-	bin_filters = {"item_code": ["in", item_codes]}
-	if company:
-		bin_filters["warehouse"] = ["in", frappe.get_all("Warehouse", filters={"company": company, "is_group": 0}, pluck="name")]
-	if warehouse:
-		bin_filters["warehouse"] = warehouse
+	warehouses = _permitted_warehouses(company, warehouse) or [""]
 
 	bins = frappe.get_all(
 		"Bin",
-		filters=bin_filters,
+		filters={"item_code": ["in", item_codes], "warehouse": ["in", warehouses]},
 		fields=[
 			"item_code",
 			"warehouse",
@@ -232,25 +252,23 @@ def get_inventory_summary(company=None, warehouse=None, item_group=None, materia
 		entry["indented_qty"] += flt(b.indented_qty)
 		entry["projected_qty"] += flt(b.projected_qty)
 		entry["stock_value"] += flt(b.stock_value)
-		if flt(b.actual_qty) > 0:
-			entry["valuation_rate"] = flt(b.valuation_rate)
 		if b.warehouse:
 			entry["warehouses"].add(b.warehouse)
 
-	# Fetch Reorder Levels in batch
+	for entry in stock_by_item.values():
+		if entry["actual_qty"] > 0:
+			entry["valuation_rate"] = entry["stock_value"] / entry["actual_qty"]
+
+	# Reorder levels only for the same warehouses as the stock figures
 	reorder_levels = {}
-	if frappe.db.exists("DocType", "Item Reorder"):
-		reorder_filters = {"parent": ["in", item_codes]}
-		if warehouse:
-			reorder_filters["warehouse"] = warehouse
-		reorders = frappe.get_all(
-			"Item Reorder",
-			filters=reorder_filters,
-			fields=["parent", "warehouse_reorder_level"],
-			limit_page_length=0,
-		)
-		for r in reorders:
-			reorder_levels[r.parent] = reorder_levels.get(r.parent, 0.0) + flt(r.warehouse_reorder_level)
+	reorders = frappe.get_all(
+		"Item Reorder",
+		filters={"parent": ["in", item_codes], "warehouse": ["in", warehouses]},
+		fields=["parent", "warehouse_reorder_level"],
+		limit_page_length=0,
+	)
+	for r in reorders:
+		reorder_levels[r.parent] = reorder_levels.get(r.parent, 0.0) + flt(r.warehouse_reorder_level)
 
 	result_items = []
 	total_valuation = 0.0
@@ -263,8 +281,6 @@ def get_inventory_summary(company=None, warehouse=None, item_group=None, materia
 	for it in items:
 		code = it.name
 		name = it.item_name or code
-		if search_query and (search_query not in code.lower() and search_query not in name.lower()):
-			continue
 
 		stock = stock_by_item.get(
 			code,
@@ -293,7 +309,7 @@ def get_inventory_summary(company=None, warehouse=None, item_group=None, materia
 		if actual_qty <= 0:
 			item_status = "Out of Stock"
 			out_of_stock_count += 1
-		elif reorder_lvl > 0 and actual_qty <= reorder_lvl:
+		elif reorder_lvl > 0 and actual_qty < reorder_lvl:
 			item_status = "Low Stock"
 			low_stock_count += 1
 			in_stock_count += 1
@@ -301,6 +317,8 @@ def get_inventory_summary(company=None, warehouse=None, item_group=None, materia
 			item_status = "In Stock"
 			in_stock_count += 1
 
+		if search_query and search_query not in code.lower() and search_query not in name.lower():
+			continue
 		if status and status != "All" and item_status.lower() != status.lower():
 			continue
 
@@ -325,10 +343,13 @@ def get_inventory_summary(company=None, warehouse=None, item_group=None, materia
 			}
 		)
 
-	# Count active warehouses for company
-	active_warehouses_count = frappe.db.count(
-		"Warehouse",
-		filters={"company": company, "is_group": 0, "disabled": 0} if frappe.db.has_column("Warehouse", "disabled") else {"company": company, "is_group": 0},
+	active_warehouses_count = len(
+		frappe.get_list(
+			"Warehouse",
+			filters={"company": company, "is_group": 0, "disabled": 0},
+			pluck="name",
+			limit_page_length=0,
+		)
 	)
 
 	return {
@@ -348,14 +369,8 @@ def get_inventory_summary(company=None, warehouse=None, item_group=None, materia
 @frappe.whitelist()
 def get_warehouse_stock_breakdown(company=None, warehouse=None, item_code=None):
 	"""Subtasks 2 & 3: Detailed per-warehouse material availability breakdown."""
-	if frappe.session.user == "Guest":
-		frappe.throw(_("Authentication required"), frappe.PermissionError)
-
-	if not frappe.has_permission("Item", "read") or not frappe.has_permission("Warehouse", "read"):
-		frappe.throw(_("Permission denied to view warehouse stock"), frappe.PermissionError)
-
-	if not company:
-		company = frappe.defaults.get_user_default("Company") or frappe.db.get_default("company")
+	_check_stock_read()
+	company = _resolve_company(company)
 
 	wh_filters = {"is_group": 0}
 	if company:
@@ -442,18 +457,18 @@ def get_warehouse_stock_breakdown(company=None, warehouse=None, item_code=None):
 
 @frappe.whitelist()
 def get_item_availability(item_code, warehouse=None, company=None):
-	"""Return real-time available stock for an item in a specific or all warehouses."""
+	"""Return real-time available stock for an item in a specific or all permitted warehouses."""
+	_check_stock_read()
 	if not item_code:
 		return {"actual_qty": 0.0, "available_qty": 0.0, "stock_uom": ""}
 
 	stock_uom = frappe.db.get_value("Item", item_code, "stock_uom") or ""
-	filters = {"item_code": item_code}
-	if warehouse:
-		filters["warehouse"] = warehouse
-	elif company:
-		filters["warehouse"] = ["in", frappe.get_all("Warehouse", filters={"company": company, "is_group": 0}, pluck="name")]
-
-	bins = frappe.get_all("Bin", filters=filters, fields=["actual_qty", "reserved_qty"])
+	warehouses = _permitted_warehouses(company, warehouse) or [""]
+	bins = frappe.get_all(
+		"Bin",
+		filters={"item_code": item_code, "warehouse": ["in", warehouses]},
+		fields=["actual_qty", "reserved_qty"],
+	)
 	actual = sum(flt(b.actual_qty) for b in bins)
 	reserved = sum(flt(b.reserved_qty) for b in bins)
 
@@ -533,10 +548,17 @@ def create_stock_transfer(from_warehouse, to_warehouse, items, project=None, com
 
 	if not items or not isinstance(items, list):
 		frappe.throw(_("At least one material item row is required for stock transfer."))
+	if len(items) > MAX_TRANSFER_ROWS:
+		frappe.throw(_("A stock transfer can have at most {0} rows.").format(MAX_TRANSFER_ROWS))
+
+	if project and not frappe.db.exists("Project", project):
+		frappe.throw(_("Project {0} does not exist.").format(project))
 
 	# Multi-row quantity aggregation to prevent split-row bypass
 	item_requested_totals = {}
 	for idx, it in enumerate(items, 1):
+		if not isinstance(it, dict):
+			frappe.throw(_("Row #{0}: Invalid item row.").format(idx))
 		item_code = it.get("item_code")
 		if not item_code or not frappe.db.exists("Item", item_code):
 			frappe.throw(_("Row #{0}: Valid Item Code is required.").format(idx))
@@ -547,31 +569,37 @@ def create_stock_transfer(from_warehouse, to_warehouse, items, project=None, com
 
 		item_requested_totals[item_code] = item_requested_totals.get(item_code, 0.0) + qty
 
-	# Validate total requested quantity against available stock in source warehouse
+	# Validate total requested quantity against stock in the source warehouse
 	for item_code, total_qty in item_requested_totals.items():
-		avail = get_item_availability(item_code, warehouse=from_warehouse)
-		if avail["actual_qty"] < total_qty:
+		actual_qty = flt(
+			frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": from_warehouse}, "actual_qty")
+		)
+		if actual_qty < total_qty:
 			frappe.throw(
-				_(
-					"Cannot transfer total {0} {1} of {2}. Available stock in {3} is only {4}."
-				).format(total_qty, avail["stock_uom"], item_code, from_warehouse, avail["actual_qty"])
+				_("Cannot transfer total {0} {1} of {2}. Available stock in {3} is only {4}.").format(
+					total_qty,
+					frappe.db.get_value("Item", item_code, "stock_uom"),
+					item_code,
+					from_warehouse,
+					actual_qty,
+				)
 			)
 
+	# Quantities are always in the material's stock UOM
 	entry_items = []
 	for it in items:
 		item_code = it["item_code"]
-		qty = flt(it["qty"])
-		uom = it.get("uom") or frappe.db.get_value("Item", item_code, "stock_uom")
-
+		stock_uom = frappe.db.get_value("Item", item_code, "stock_uom")
 		entry_items.append(
 			{
 				"item_code": item_code,
-				"qty": qty,
-				"uom": uom,
-				"stock_uom": uom,
+				"qty": flt(it["qty"]),
+				"uom": stock_uom,
+				"stock_uom": stock_uom,
+				"conversion_factor": 1,
 				"s_warehouse": from_warehouse,
 				"t_warehouse": to_warehouse,
-				"project": project if project and frappe.db.exists("Project", project) else None,
+				"project": project or None,
 			}
 		)
 
@@ -586,7 +614,7 @@ def create_stock_transfer(from_warehouse, to_warehouse, items, project=None, com
 			"to_warehouse": to_warehouse,
 			"posting_date": nowdate(),
 			"posting_time": nowtime(),
-			"project": project if project and frappe.db.exists("Project", project) else None,
+			"project": project or None,
 			"remarks": remarks or _("Construction Material Transfer from {0} to {1}").format(from_warehouse, to_warehouse),
 			"items": entry_items,
 		}
@@ -623,7 +651,7 @@ def get_stock_transfers(company=None, project=None, limit=25):
 	if not frappe.has_permission("Stock Entry", "read"):
 		frappe.throw(_("Permission denied to view stock transfers"), frappe.PermissionError)
 
-	filters = {"stock_entry_type": "Material Transfer"}
+	filters = {"purpose": "Material Transfer"}
 	if company:
 		filters["company"] = company
 	if project:
@@ -643,7 +671,7 @@ def get_stock_transfers(company=None, project=None, limit=25):
 			"docstatus",
 		],
 		order_by="posting_date desc, creation desc",
-		limit_page_length=cint(limit) or 25,
+		limit_page_length=min(cint(limit) or 25, 100),
 	)
 
 	if not entries:
@@ -690,88 +718,67 @@ def create_sample_stock_data(company=None):
 	# 2. Ensure sample materials exist
 	materials.create_sample_materials()
 
-	# Sample materials initial stock and valuation rates
-	SAMPLE_STOCK = [
-		{"item_code": "CM-CEM-001", "qty": 500, "rate": 350.0},     # 500 Bags OPC Cement
-		{"item_code": "CM-STL-001", "qty": 2000, "rate": 65.0},     # 2000 Kg TMT Rebar
-		{"item_code": "CM-AGG-001", "qty": 60, "rate": 1200.0},     # 60 Cu.m River Sand
-		{"item_code": "CM-AGG-002", "qty": 80, "rate": 1400.0},     # 80 Cu.m Aggregates
-		{"item_code": "CM-MAS-001", "qty": 5000, "rate": 9.0},      # 5000 Nos Bricks
-		{"item_code": "CM-MAS-002", "qty": 1000, "rate": 35.0},     # 1000 Nos Concrete Blocks
-		{"item_code": "CM-PLB-001", "qty": 120, "rate": 280.0},     # 120 Meter PVC Pipe
-		{"item_code": "CM-ELE-001", "qty": 300, "rate": 45.0},      # 300 Meter Copper Cable
+	# Opening quantities; rates are shared with the US-18 sample data
+	sample_stock = [
+		("CM-CEM-001", 500),
+		("CM-STL-001", 2000),
+		("CM-AGG-001", 60),
+		("CM-AGG-002", 80),
+		("CM-MAS-001", 5000),
+		("CM-MAS-002", 1000),
+		("CM-PLB-001", 120),
+		("CM-ELE-001", 300),
 	]
-
 	cost_center = frappe.db.get_value("Company", company, "cost_center")
 
-	# Check if stock already exists in Central Store
-	existing_stock = frappe.db.count("Bin", {"warehouse": central_wh, "actual_qty": [">", 0]})
-	receipt_name = None
-
-	if existing_stock == 0:
+	receipt_name = _get_sample_entry(company, SAMPLE_RECEIPT_MARKER)
+	if not receipt_name:
 		items_to_receive = []
-		for s in SAMPLE_STOCK:
-			if frappe.db.exists("Item", s["item_code"]):
-				uom = frappe.db.get_value("Item", s["item_code"], "stock_uom")
-				row = {
-					"item_code": s["item_code"],
-					"qty": s["qty"],
+		for item_code, qty in sample_stock:
+			uom = frappe.db.get_value("Item", item_code, "stock_uom")
+			items_to_receive.append(
+				{
+					"item_code": item_code,
+					"qty": qty,
 					"uom": uom,
 					"stock_uom": uom,
+					"conversion_factor": 1,
 					"t_warehouse": central_wh,
-					"basic_rate": s["rate"],
-				}
-				if cost_center:
-					row["cost_center"] = cost_center
-				items_to_receive.append(row)
-
-		if items_to_receive:
-			mr_entry = frappe.get_doc(
-				{
-					"doctype": "Stock Entry",
-					"stock_entry_type": "Material Receipt",
-					"purpose": "Material Receipt",
-					"company": company,
-					"to_warehouse": central_wh,
-					"posting_date": nowdate(),
-					"posting_time": nowtime(),
-					"remarks": "Initial sample stock for construction materials",
-					"items": items_to_receive,
+					"basic_rate": ITEM_RATES[item_code],
+					"cost_center": cost_center,
 				}
 			)
-			mr_entry.insert(ignore_permissions=True)
-			mr_entry.submit()
-			frappe.db.commit()
-			receipt_name = mr_entry.name
+		receipt = frappe.get_doc(
+			{
+				"doctype": "Stock Entry",
+				"stock_entry_type": "Material Receipt",
+				"purpose": "Material Receipt",
+				"company": company,
+				"to_warehouse": central_wh,
+				"remarks": f"{SAMPLE_RECEIPT_MARKER} Initial sample stock for construction materials",
+				"items": items_to_receive,
+			}
+		)
+		receipt.insert(ignore_permissions=True)
+		receipt.submit()
+		receipt_name = receipt.name
 
-	# Create a sample stock transfer to Site Store if Site Store has 0 stock
-	transfer_name = None
-	site_stock = frappe.db.count("Bin", {"warehouse": site_wh, "actual_qty": [">", 0]})
-	if site_stock == 0 and frappe.db.exists("Warehouse", site_wh):
-		# Look for any construction project
-		project = frappe.db.get_value("Project", {"company": company}, "name")
-		transfer_items = [
-			{"item_code": "CM-CEM-001", "qty": 50},
-			{"item_code": "CM-STL-001", "qty": 250},
-			{"item_code": "CM-MAS-001", "qty": 500},
-		]
-		valid_transfers = [
-			ti for ti in transfer_items if frappe.db.exists("Item", ti["item_code"])
-		]
-		if valid_transfers:
-			try:
-				res = create_stock_transfer(
-					from_warehouse=central_wh,
-					to_warehouse=site_wh,
-					items=valid_transfers,
-					project=project,
-					company=company,
-					remarks="Sample transfer from Central Store to Site Store",
-					submit=1,
-				)
-				transfer_name = res.get("name")
-			except Exception as e:
-				frappe.log_error(f"Sample transfer failed: {e}")
+	transfer_name = _get_sample_entry(company, SAMPLE_TRANSFER_MARKER)
+	if not transfer_name:
+		result = create_stock_transfer(
+			from_warehouse=central_wh,
+			to_warehouse=site_wh,
+			items=[
+				{"item_code": "CM-CEM-001", "qty": 50},
+				{"item_code": "CM-STL-001", "qty": 250},
+				{"item_code": "CM-MAS-001", "qty": 500},
+			],
+			project=frappe.db.get_value("Project", {"company": company, "status": "Open"}, "name"),
+			company=company,
+			remarks=f"{SAMPLE_TRANSFER_MARKER} Sample transfer from Central Store to Site Store",
+			submit=1,
+		)
+		transfer_name = result["name"]
 
 	return {
 		"company": company,
@@ -780,3 +787,12 @@ def create_sample_stock_data(company=None):
 		"material_receipt": receipt_name,
 		"stock_transfer": transfer_name,
 	}
+
+
+def _get_sample_entry(company, marker):
+	"""Return the submitted or draft sample Stock Entry carrying `marker`, so re-runs create nothing."""
+	return frappe.db.get_value(
+		"Stock Entry",
+		{"company": company, "remarks": ["like", f"{marker}%"], "docstatus": ["!=", 2]},
+		"name",
+	)

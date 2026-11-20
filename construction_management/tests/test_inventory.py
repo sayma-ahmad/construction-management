@@ -326,3 +326,154 @@ class TestInventory(FrappeTestCase):
 				)
 		finally:
 			frappe.set_user("Administrator")
+
+	def _item(self):
+		return "CM-CEM-001" if frappe.db.exists("Item", "CM-CEM-001") else frappe.db.get_value("Item", {"is_stock_item": 1}, "name")
+
+	def _user_with_roles(self, *roles):
+		return frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": f"inv_{frappe.generate_hash(length=6)}@example.com",
+				"first_name": "Inventory",
+				"send_welcome_email": 0,
+				"roles": [{"role": role} for role in roles],
+			}
+		).insert(ignore_permissions=True).name
+
+	def test_13_cancelled_transfer_reverses_stock(self):
+		"""Subtask 6: Cancelling a submitted transfer restores both warehouses."""
+		abbr = self._get_abbr()
+		central_wh = f"Central Store - {abbr}"
+		site_wh = f"Site Store - {abbr}"
+		item_code = self._item()
+		self._ensure_stock_in_warehouse(item_code, central_wh, 30, rate=380.0)
+
+		source_before = inventory.get_item_availability(item_code, warehouse=central_wh)["actual_qty"]
+		target_before = inventory.get_item_availability(item_code, warehouse=site_wh)["actual_qty"]
+
+		res = inventory.create_stock_transfer(
+			from_warehouse=central_wh,
+			to_warehouse=site_wh,
+			items=[{"item_code": item_code, "qty": 12}],
+			company=self.company,
+		)
+		se = frappe.get_doc("Stock Entry", res["name"])
+		self.assertEqual(inventory.get_item_availability(item_code, warehouse=site_wh)["actual_qty"], target_before + 12)
+
+		se.cancel()
+		self.assertEqual(inventory.get_item_availability(item_code, warehouse=central_wh)["actual_qty"], source_before)
+		self.assertEqual(inventory.get_item_availability(item_code, warehouse=site_wh)["actual_qty"], target_before)
+		transfers = {t.name: t for t in inventory.get_stock_transfers(company=self.company, limit=100)}
+		self.assertEqual(transfers[se.name]["status"], "Cancelled")
+
+	def test_14_draft_transfer_does_not_move_stock(self):
+		"""Subtask 4: A draft transfer keeps balances until it is submitted."""
+		abbr = self._get_abbr()
+		central_wh = f"Central Store - {abbr}"
+		site_wh = f"Site Store - {abbr}"
+		item_code = self._item()
+		self._ensure_stock_in_warehouse(item_code, central_wh, 10, rate=380.0)
+		target_before = inventory.get_item_availability(item_code, warehouse=site_wh)["actual_qty"]
+
+		res = inventory.create_stock_transfer(
+			from_warehouse=central_wh,
+			to_warehouse=site_wh,
+			items=[{"item_code": item_code, "qty": 4}],
+			company=self.company,
+			submit=0,
+		)
+		self.assertEqual(res["docstatus"], 0)
+		self.assertEqual(inventory.get_item_availability(item_code, warehouse=site_wh)["actual_qty"], target_before)
+
+	def test_15_invalid_quantity_project_and_uom_handling(self):
+		"""Subtask 4: Zero/negative quantities and unknown projects are rejected; stock UOM is enforced."""
+		abbr = self._get_abbr()
+		central_wh = f"Central Store - {abbr}"
+		site_wh = f"Site Store - {abbr}"
+		item_code = self._item()
+		self._ensure_stock_in_warehouse(item_code, central_wh, 5, rate=380.0)
+
+		for qty in (0, -3):
+			with self.assertRaises(frappe.ValidationError):
+				inventory.create_stock_transfer(central_wh, site_wh, [{"item_code": item_code, "qty": qty}], company=self.company)
+
+		with self.assertRaises(frappe.ValidationError):
+			inventory.create_stock_transfer(
+				central_wh, site_wh, [{"item_code": item_code, "qty": 1}], project="NO-SUCH-PROJECT", company=self.company
+			)
+
+		res = inventory.create_stock_transfer(
+			central_wh, site_wh, [{"item_code": item_code, "qty": 1, "uom": "Kg"}], company=self.company, submit=0
+		)
+		row = frappe.get_doc("Stock Entry", res["name"]).items[0]
+		stock_uom = frappe.db.get_value("Item", item_code, "stock_uom")
+		self.assertEqual((row.uom, row.stock_uom, flt(row.conversion_factor)), (stock_uom, stock_uom, 1.0))
+
+	def test_16_sample_stock_data_is_idempotent(self):
+		"""Subtask 5: Running the sample stock generator twice creates no extra entries."""
+		first = inventory.create_sample_stock_data(company=self.company)
+		entries_before = frappe.db.count("Stock Entry", {"company": self.company})
+		bins_before = {
+			b.warehouse: b.actual_qty
+			for b in frappe.get_all("Bin", filters={"item_code": "CM-CEM-001"}, fields=["warehouse", "actual_qty"])
+		}
+
+		second = inventory.create_sample_stock_data(company=self.company)
+		self.assertEqual(first["material_receipt"], second["material_receipt"])
+		self.assertEqual(first["stock_transfer"], second["stock_transfer"])
+		self.assertEqual(frappe.db.count("Stock Entry", {"company": self.company}), entries_before)
+		self.assertEqual(
+			{
+				b.warehouse: b.actual_qty
+				for b in frappe.get_all("Bin", filters={"item_code": "CM-CEM-001"}, fields=["warehouse", "actual_qty"])
+			},
+			bins_before,
+		)
+
+		transfer = frappe.get_doc("Stock Entry", second["stock_transfer"])
+		self.assertEqual(transfer.docstatus, 1)
+		self.assertEqual({(r.s_warehouse, r.t_warehouse) for r in transfer.items}, {(second["central_warehouse"], second["site_warehouse"])})
+
+	def test_17_stock_read_permission_required(self):
+		"""Stock balance APIs need Bin read permission; Stock Users are allowed."""
+		item_code = self._item()
+		no_stock_user = self._user_with_roles("Employee")
+		stock_user = self._user_with_roles("Stock User")
+
+		frappe.set_user(no_stock_user)
+		for call in (
+			lambda: inventory.get_item_availability(item_code),
+			lambda: inventory.get_inventory_summary(company=self.company),
+			lambda: inventory.get_warehouse_stock_breakdown(company=self.company),
+		):
+			with self.assertRaises(frappe.PermissionError):
+				call()
+
+		frappe.set_user(stock_user)
+		self.assertIn("kpis", inventory.get_inventory_summary(company=self.company))
+		self.assertIn("actual_qty", inventory.get_item_availability(item_code))
+
+	def test_18_summary_matches_bins_and_reorder_levels(self):
+		"""Subtask 3: Quantities come from Bin records and low stock means strictly below reorder level."""
+		data = inventory.get_inventory_summary(company=self.company)
+		warehouses = frappe.get_all("Warehouse", filters={"company": self.company, "is_group": 0}, pluck="name")
+		for row in data["items"]:
+			bins = frappe.get_all(
+				"Bin",
+				filters={"item_code": row["item_code"], "warehouse": ["in", warehouses]},
+				fields=["actual_qty", "stock_value"],
+			)
+			self.assertAlmostEqual(row["actual_qty"], sum(flt(b.actual_qty) for b in bins), places=3)
+			self.assertAlmostEqual(row["stock_value"], sum(flt(b.stock_value) for b in bins), places=2)
+			reorder = sum(
+				flt(r)
+				for r in frappe.get_all(
+					"Item Reorder",
+					filters={"parent": row["item_code"], "warehouse": ["in", warehouses]},
+					pluck="warehouse_reorder_level",
+				)
+			)
+			self.assertEqual(row["reorder_level"], reorder)
+			if row["actual_qty"] > 0:
+				self.assertEqual(row["status"] == "Low Stock", reorder > 0 and row["actual_qty"] < reorder)

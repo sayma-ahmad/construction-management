@@ -99,32 +99,18 @@
 	border-bottom-color: var(--primary, #1b68b3);
 }
 
-.cm-status-badge {
-	display: inline-block;
-	padding: 2px 8px;
-	border-radius: 12px;
-	font-size: 11px;
-	font-weight: 600;
-	text-align: center;
+.cm-inventory .cm-status-in-stock {
+	background: var(--bg-blue);
+	color: var(--blue-700);
 }
 
-.cm-status-in-stock {
-	background: #dcfce7;
-	color: #166534;
+.cm-inventory .cm-status-low-stock {
+	background: transparent;
+	color: var(--blue-700);
+	border: 1px solid var(--blue-700);
 }
 
-.cm-status-low-stock {
-	background: #fef3c7;
-	color: #92400e;
-}
-
-.cm-status-out-of-stock {
-	background: #fee2e2;
-	color: #991b1b;
-}
-
-.cm-inv-transfer-btn {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
+.cm-inventory .cm-status-out-of-stock {
+	background: var(--bg-red);
+	color: var(--red-600);
 }

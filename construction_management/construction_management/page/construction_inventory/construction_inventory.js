@@ -158,8 +158,11 @@ class ConstructionInventoryView {
 					const $select = this.$wrapper.find(".cm-inv-warehouse-filter");
 					$select.empty().append(`<option value="">${__("All Warehouses")}</option>`);
 					this.warehouses.forEach((wh) => {
-						const tag = wh.cm_is_site_warehouse ? " [Site]" : "";
-						$select.append(`<option value="${wh.name}">${wh.warehouse_name || wh.name}${tag}</option>`);
+						const tag = wh.cm_is_site_warehouse ? ` [${__("Site")}]` : "";
+						$("<option>")
+							.val(wh.name)
+							.text(`${wh.warehouse_name || wh.name}${tag}`)
+							.appendTo($select);
 					});
 				}
 			},
@@ -246,12 +249,7 @@ class ConstructionInventoryView {
 		`;
 
 		items.forEach((item) => {
-			const badgeClass =
-				item.status === "In Stock"
-					? "cm-status-in-stock"
-					: item.status === "Low Stock"
-					? "cm-status-low-stock"
-					: "cm-status-out-of-stock";
+			const badgeClass = `cm-status cm-status-${item.status.toLowerCase().replace(/\s+/g, "-")}`;
 
 			html += `
 				<tr data-item="${frappe.utils.escape_html(item.item_code)}">
@@ -267,7 +265,7 @@ class ConstructionInventoryView {
 					<td class="text-right text-muted">${format_number(item.reserved_qty, null, 2)}</td>
 					<td class="text-right">${format_currency(item.valuation_rate, currency)}</td>
 					<td class="text-right font-weight-bold">${format_currency(item.stock_value, currency)}</td>
-					<td class="text-center"><span class="cm-status-badge ${badgeClass}">${__(item.status)}</span></td>
+					<td class="text-center"><span class="${badgeClass}">${__(item.status)}</span></td>
 				</tr>
 			`;
 		});
