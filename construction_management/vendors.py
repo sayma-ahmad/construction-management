@@ -121,9 +121,14 @@ SAMPLE_VENDORS = [
 ]
 
 
+def ensure_custom_fields():
+	"""Install Supplier custom fields (schema DDL) when not yet present."""
+	create_custom_fields(SUPPLIER_CUSTOM_FIELDS)
+
+
 def setup():
 	"""Run after install and migrate: Supplier custom fields and vendor Supplier Groups."""
-	create_custom_fields(SUPPLIER_CUSTOM_FIELDS)
+	ensure_custom_fields()
 	create_vendor_types()
 
 
@@ -153,11 +158,14 @@ def create_vendor_types():
 			).insert(ignore_permissions=True)
 
 
-def create_sample_vendors():
+def create_sample_vendors(run_setup=True):
 	"""Insert the sample construction vendors. Run manually:
 	bench --site <site> execute construction_management.vendors.create_sample_vendors
 	"""
-	setup()
+	if run_setup:
+		setup()
+	else:
+		create_vendor_types()
 	country = frappe.db.get_default("country") or "India"
 
 	for vendor in SAMPLE_VENDORS:
