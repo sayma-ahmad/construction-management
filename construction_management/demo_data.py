@@ -76,6 +76,7 @@ SAMPLE_PROJECTS = (
 	{
 		"key": "PRJ-01",
 		"marker": "CM-DEMO:PRJ-01",
+		"estimated_costing": 185000000.0,
 		"project_name": "Riverside Apartments",
 		"status": "Open",
 		"percent_complete": 78.0,
@@ -86,6 +87,7 @@ SAMPLE_PROJECTS = (
 	{
 		"key": "PRJ-02",
 		"marker": "CM-DEMO:PRJ-02",
+		"estimated_costing": 320000000.0,
 		"project_name": "Metro Office Tower",
 		"status": "Open",
 		"percent_complete": 54.0,
@@ -96,6 +98,7 @@ SAMPLE_PROJECTS = (
 	{
 		"key": "PRJ-03",
 		"marker": "CM-DEMO:PRJ-03",
+		"estimated_costing": 96000000.0,
 		"project_name": "Green Valley Villas",
 		"status": "On hold",
 		"percent_complete": 32.0,
@@ -106,6 +109,7 @@ SAMPLE_PROJECTS = (
 	{
 		"key": "PRJ-04",
 		"marker": "CM-DEMO:PRJ-04",
+		"estimated_costing": 42000000.0,
 		"project_name": "City Mall Renovation",
 		"status": "Open",
 		"percent_complete": 40.0,
@@ -116,6 +120,7 @@ SAMPLE_PROJECTS = (
 	{
 		"key": "PRJ-05",
 		"marker": "CM-DEMO:PRJ-05",
+		"estimated_costing": 68000000.0,
 		"project_name": "Sunrise School Block",
 		"status": "Completed",
 		"percent_complete": 100.0,
@@ -196,6 +201,14 @@ SAMPLE_ISSUES = (
 		"Baffle channels re-leveled and inspected prior to academic block handover.",
 	),
 )
+
+SAMPLE_ISSUE_TYPES = {
+	"ISSUE-01": "Quality",
+	"ISSUE-02": "Safety",
+	"ISSUE-03": "Delay",
+	"ISSUE-04": "Design",
+	"ISSUE-05": "Quality",
+}
 
 
 def _new_counts():
@@ -578,6 +591,7 @@ def _ensure_projects(counts, company, today):
 				"status": spec["status"],
 				"percent_complete_method": "Manual",
 				"percent_complete": spec["percent_complete"],
+				"estimated_costing": spec["estimated_costing"],
 				"expected_start_date": add_days(today, spec["start_offset"]),
 				"expected_end_date": add_days(today, spec["end_offset"]),
 				"notes": f"{marker} {spec['notes']}",
@@ -683,12 +697,14 @@ def _ensure_issues(counts, projects_by_key, company, today):
 			_record(counts, "Issue", created=False)
 			continue
 
+		issue_type = SAMPLE_ISSUE_TYPES.get(issue_key)
 		doc = frappe.get_doc(
 			{
 				"doctype": "Issue",
 				"subject": subject,
 				"project": project,
 				"company": company,
+				"issue_type": issue_type if frappe.db.exists("Issue Type", issue_type) else None,
 				"status": status,
 				"priority": _resolve_issue_priority(priority),
 				"opening_date": today,
@@ -987,6 +1003,7 @@ def _ensure_material_requests(counts, company, warehouse, projects_by_key, today
 				"title": spec["title"],
 				"material_request_type": "Purchase",
 				"company": company,
+				"cm_project": project,
 				"transaction_date": spec["tx_date"],
 				"schedule_date": spec["sched_date"],
 				"items": items,
@@ -1012,6 +1029,10 @@ def _ensure_purchase_orders(counts, company, currency, warehouse, mrs, projects_
 			"name",
 		)
 		if existing:
+			if frappe.get_meta("Purchase Order").has_field("cm_material_request") and not frappe.db.get_value(
+				"Purchase Order", existing, "cm_material_request"
+			):
+				frappe.db.set_value("Purchase Order", existing, "cm_material_request", mr_name, update_modified=False)
 			pos[po_key] = existing
 			_record(counts, "Purchase Order", created=False)
 			return
@@ -1041,6 +1062,8 @@ def _ensure_purchase_orders(counts, company, currency, warehouse, mrs, projects_
 		po.schedule_date = sched_date
 		po.set_warehouse = warehouse
 		po.project = project
+		if po.meta.has_field("cm_material_request"):
+			po.cm_material_request = mr_name
 		for row in po.items:
 			if qty_overrides and row.item_code in qty_overrides:
 				row.qty = qty_overrides[row.item_code]

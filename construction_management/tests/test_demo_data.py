@@ -93,10 +93,11 @@ class TestDemoData(FrappeTestCase):
 		projects = frappe.get_all(
 			"Project",
 			filters={"name": ["in", result["records"]["projects"]]},
-			fields=["name", "project_name", "status", "company"],
+			fields=["name", "project_name", "status", "company", "estimated_costing"],
 		)
 		self.assertEqual(len(projects), 5)
 		self.assertTrue(all(p.company == company.name for p in projects))
+		self.assertTrue(all(flt(p.estimated_costing) > 0 for p in projects))
 		self.assertSetEqual({p.status for p in projects}, {"Open", "On hold", "Completed"})
 
 		# Group phases and leaf tasks link cleanly to their Projects
@@ -123,10 +124,14 @@ class TestDemoData(FrappeTestCase):
 		issues = frappe.get_all(
 			"Issue",
 			filters={"name": ["in", result["records"]["issues"]]},
-			fields=["name", "project", "status"],
+			fields=["name", "project", "status", "issue_type"],
 		)
 		self.assertEqual(len(issues), 5)
 		self.assertTrue(all(iss.project in result["records"]["projects"] for iss in issues))
+		self.assertTrue(
+			all(iss.issue_type for iss in issues if frappe.db.exists("Issue Type", "Quality")),
+			"Sample issues must carry a construction Issue Type",
+		)
 		self.assertSetEqual({iss.status for iss in issues}, {"Open", "On Hold", "Replied", "Resolved"})
 
 		# DPR lifecycle (docstatus, review_status, reviewer metadata) & child constraints
@@ -169,6 +174,21 @@ class TestDemoData(FrappeTestCase):
 		)
 		self.assertEqual(len(mrs), 4)
 		self.assertTrue(all(m.docstatus == 1 for m in mrs))
+		if frappe.get_meta("Purchase Order").has_field("cm_material_request"):
+			linked_mrs = frappe.get_all(
+				"Purchase Order",
+				filters={"name": ["in", result["records"]["purchase_orders"]], "cm_material_request": ["is", "set"]},
+				pluck="cm_material_request",
+			)
+			self.assertEqual(len(linked_mrs), 3)
+			self.assertTrue(set(linked_mrs).issubset({m.name for m in mrs}))
+		for mr in mrs:
+			header_project = frappe.db.get_value("Material Request", mr.name, "cm_project")
+			self.assertIn(header_project, result["records"]["projects"])
+			item_projects = set(
+				frappe.get_all("Material Request Item", filters={"parent": mr.name}, pluck="project")
+			)
+			self.assertEqual(item_projects, {header_project})
 		self.assertEqual({m.status for m in mrs}, {"Received", "Partially Ordered", "Pending"})
 
 		# Purchase Orders submitted, linked to MRs (first 3), and natively transitioned statuses
@@ -507,7 +527,9 @@ class TestDemoData(FrappeTestCase):
 
 	def test_07_non_inr_company_currency_consistency(self):
 		self._require_erpnext_address_fields()
-		company, warehouse = self._create_isolated_company(currency="USD", country="United States")
+		# Keep the site's country: a new country installs regional custom fields, and that
+		# schema change commits the test transaction so nothing can be rolled back.
+		company, warehouse = self._create_isolated_company(currency="USD", country=frappe.db.get_value("Company", {}, "country") or "India")
 		if not frappe.db.exists("Price List", {"buying": 1, "currency": "USD", "enabled": 1}):
 			frappe.get_doc(
 				{

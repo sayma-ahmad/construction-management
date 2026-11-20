@@ -163,11 +163,13 @@ doc_events = {
 	},
 	"Purchase Order": {
 		"validate": "construction_management.purchase_orders.validate_purchase_order",
+	},
 	"Material Request": {
 		"validate": "construction_management.construction_management.material_request.validate_construction_material_request",
 	},
 	"Issue": {
 		"validate": "construction_management.construction_management.issue.validate_construction_issue",
+	},
 	"Purchase Receipt": {
 		"validate": "construction_management.grn.validate_purchase_receipt",
 	},
