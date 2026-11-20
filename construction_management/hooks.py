@@ -92,6 +92,7 @@ after_install = [
 	"construction_management.construction_management.material_request.setup",
 	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
 	"construction_management.grn.setup",
+	"construction_management.inventory.setup",
 ]
 after_migrate = [
 	"construction_management.materials.setup",
@@ -100,6 +101,7 @@ after_migrate = [
 	"construction_management.construction_management.material_request.setup",
 	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
 	"construction_management.grn.setup",
+	"construction_management.inventory.setup",
 ]
 
 # Uninstallation
@@ -183,7 +185,7 @@ fixtures = [
 	{
 		"dt": "Custom DocPerm",
 		"filters": [
-			["parent", "in", ["Material Request", "Item", "Issue", "Issue Type", "Issue Priority"]],
+			["parent", "in", ["Material Request", "Item", "Issue", "Issue Type", "Issue Priority", "Task"]],
 			["role", "in", ["Projects Manager", "Projects User"]],
 		],
 	},
