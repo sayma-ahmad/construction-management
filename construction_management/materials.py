@@ -129,9 +129,14 @@ SAMPLE_MATERIALS = [
 ]
 
 
+def ensure_custom_fields():
+	"""Install Item custom fields (schema DDL) when not yet present."""
+	create_custom_fields(ITEM_CUSTOM_FIELDS)
+
+
 def setup():
 	"""Run after install and migrate: Item custom fields and material Item Groups."""
-	create_custom_fields(ITEM_CUSTOM_FIELDS)
+	ensure_custom_fields()
 	create_material_categories()
 
 
@@ -161,11 +166,14 @@ def create_material_categories():
 			).insert(ignore_permissions=True)
 
 
-def create_sample_materials():
+def create_sample_materials(run_setup=True):
 	"""Insert the sample construction materials. Run manually:
 	bench --site <site> execute construction_management.materials.create_sample_materials
 	"""
-	setup()
+	if run_setup:
+		setup()
+	else:
+		create_material_categories()
 	if not frappe.db.exists("UOM", "Bag"):
 		frappe.get_doc({"doctype": "UOM", "uom_name": "Bag", "must_be_whole_number": 1}).insert(
 			ignore_permissions=True
