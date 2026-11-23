@@ -219,6 +219,7 @@ def _new_counts():
 		"Supplier",
 		"Project",
 		"Task",
+		"Project Phase",
 		"Issue",
 		"Daily Progress Report",
 		"Stock Entry",
@@ -672,6 +673,99 @@ def _ensure_tasks(counts, projects_by_key, today):
 		_record(counts, "Task", created=True)
 
 	return {"phases": phases_by_key, "tasks": tasks_by_key}
+
+
+PHASE_STATUS_FROM_TASK = {"Working": "In Progress", "Open": "Not Started", "Completed": "Completed"}
+
+SAMPLE_PHASE_PLANS = {
+	"PRJ-01": (
+		("PHASE-R1", "Site Preparation", "2025-08-01", "2025-10-31", "Completed", 100),
+		("PHASE-01", "Foundation Works", "2025-11-01", "2026-02-15", "Completed", 100),
+		("PHASE-R3", "Structure", "2026-02-16", "2026-06-30", "Completed", 100),
+		("PHASE-R4", "MEP Works", "2026-07-01", "2026-10-15", "Completed", 100),
+		("PHASE-02", "Finishing Works", "2026-10-16", "2026-12-31", "In Progress", 68),
+		("PHASE-R6", "Handover", "2027-01-01", "2027-02-15", "Not Started", 0),
+	),
+}
+
+
+def _sample_phase_rows(projects_by_key, today):
+	"""Return (phase_key, project, values) for every sample Project Phase."""
+	rows = []
+	for proj_key, plan in SAMPLE_PHASE_PLANS.items():
+		project = projects_by_key.get(proj_key)
+		if not project:
+			continue
+		for sequence, (phase_key, phase_name, start, end, status, progress) in enumerate(plan, 1):
+			rows.append(
+				(
+					phase_key,
+					project,
+					{
+						"phase_name": phase_name,
+						"sequence": sequence,
+						"status": status,
+						"progress": progress,
+						"start_date": start,
+						"end_date": end,
+					},
+				)
+			)
+
+	sequence = {}
+	for phase_key, proj_key, phase_name, start_off, end_off, status in SAMPLE_PHASES:
+		project = projects_by_key.get(proj_key)
+		if not project or proj_key in SAMPLE_PHASE_PLANS:
+			continue
+		sequence[project] = sequence.get(project, 0) + 1
+		task_progress = [t[8] for t in SAMPLE_TASKS if t[2] == phase_key]
+		progress = 100 if status == "Completed" else round(sum(task_progress) / len(task_progress)) if task_progress else 0
+		# Use the dates of the matching sample phase task so phases line up with their project.
+		phase_task = frappe.db.get_value(
+			"Task",
+			{"project": project, "description": ["like", f"%[CM-DEMO:{phase_key}]%"]},
+			["exp_start_date", "exp_end_date"],
+			as_dict=True,
+		) or {}
+		rows.append(
+			(
+				phase_key,
+				project,
+				{
+					"phase_name": phase_name,
+					"sequence": sequence[project],
+					"status": PHASE_STATUS_FROM_TASK.get(status, "Not Started"),
+					"progress": progress,
+					"start_date": phase_task.get("exp_start_date") or add_days(today, start_off),
+					"end_date": phase_task.get("exp_end_date") or add_days(today, end_off),
+				},
+			)
+		)
+	return rows
+
+
+def _ensure_project_phases(counts, projects_by_key, today):
+	"""Create the sample Project Phase records, skipping any that already exist."""
+	phase_names = []
+	for phase_key, project, values in _sample_phase_rows(projects_by_key, today):
+		existing = frappe.db.get_value("Project Phase", {"project": project, "phase_name": values["phase_name"]}, "name")
+		if existing:
+			phase_names.append(existing)
+			_record(counts, "Project Phase", created=False)
+			continue
+
+		doc = frappe.get_doc(
+			{
+				"doctype": "Project Phase",
+				"project": project,
+				"description": f"[CM-DEMO:{phase_key}] Sample phase",
+				**values,
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		phase_names.append(doc.name)
+		_record(counts, "Project Phase", created=True)
+	return phase_names
 
 
 def _resolve_issue_priority(desired):
@@ -1327,6 +1421,7 @@ def create_sample_data(company=None, warehouse=None):
 		suppliers = _ensure_vendors(counts, prereqs.country)
 		projects_by_key = _ensure_projects(counts, prereqs.company, today)
 		tasks = _ensure_tasks(counts, projects_by_key, today)
+		project_phases = _ensure_project_phases(counts, projects_by_key, today)
 		issues = _ensure_issues(counts, projects_by_key, prereqs.company, today)
 		dprs = _ensure_dprs(counts, projects_by_key, tasks["tasks"], suppliers, today)
 
@@ -1397,6 +1492,7 @@ def create_sample_data(company=None, warehouse=None):
 		"records": {
 			"projects": list(projects_by_key.values()),
 			"phases": list(tasks["phases"].values()),
+			"project_phases": project_phases,
 			"tasks": list(tasks["tasks"].values()),
 			"issues": issues,
 			"dprs": dprs,

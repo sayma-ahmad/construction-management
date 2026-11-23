@@ -121,12 +121,26 @@ class ProjectDetails {
 		`);
 		$panel.find(".cm-pd-all-phases").on("click", () => frappe.set_route("construction-phases", this.project.code));
 
-		new construction_management.PhaseList({
+		const project = this.project;
+		const phase_list = new construction_management.PhaseList({
 			parent: $panel,
-			phases: construction_management.get_project_phases(this.project),
+			loader: () =>
+				construction_management
+					.load_phases({ project_name: project.name, project_code: project.code })
+					.then((data) => {
+						phase_list.default_project = data.mapped_project;
+						this.show_current_phase(data.phases);
+						return data.phases;
+					}),
 			show_project: false,
 			show_create: true,
 		});
+	}
+
+	show_current_phase(phases) {
+		const current = phases.find((phase) => phase.status !== "Completed");
+		const text = !phases.length ? __("No phases recorded") : current ? current.name : __("All phases complete");
+		this.$wrapper.find(".cm-pd-current-phase .cm-pd-field-value").text(text);
 	}
 
 	render_tasks() {
@@ -205,9 +219,6 @@ class ProjectDetails {
 
 		const total_days = Math.max(frappe.datetime.get_diff(p.end, p.start), 1);
 		const elapsed_days = Math.min(Math.max(frappe.datetime.get_diff(frappe.datetime.get_today(), p.start), 0), total_days);
-		const current_phase = construction_management
-			.get_project_phases(p)
-			.find((phase) => phase.progress < 100);
 
 		return `
 			<div class="cm-pd-overview">
@@ -246,7 +257,7 @@ class ProjectDetails {
 					</div>
 					<div class="cm-pd-current-phase">
 						<div class="cm-pd-field-label">${__("Current Phase")}</div>
-						<div class="cm-pd-field-value">${current_phase ? __(current_phase.name) : __("All phases complete")}</div>
+						<div class="cm-pd-field-value">${__("Loading...")}</div>
 					</div>
 				</div>
 			</div>

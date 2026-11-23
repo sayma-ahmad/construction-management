@@ -16,15 +16,25 @@ frappe.pages["construction-phases"].on_page_load = function (wrapper) {
 
 	const $container = $(`<div class="cm-phases-page"></div>`).appendTo(page.main);
 	wrapper.phase_list_ready = frappe.require(CM_PHASE_ASSETS).then(() => {
-		page.set_primary_action(__("New Phase"), construction_management.show_phase_create_placeholder, "add");
 		wrapper.phase_list = new construction_management.PhaseList({
 			parent: $container,
-			phases: construction_management.get_all_phases(),
+			loader: () => construction_management.load_phases().then((data) => data.phases),
 		});
+		if (frappe.model.can_create("Project Phase")) {
+			page.set_primary_action(__("New Phase"), () => wrapper.phase_list.create_phase(), "add");
+		}
 	});
 };
 
 // /app/construction-phases/PRJ-001 opens the list filtered to that project.
 frappe.pages["construction-phases"].on_page_show = function (wrapper) {
-	wrapper.phase_list_ready.then(() => wrapper.phase_list.set_project(frappe.get_route()[1] || ""));
+	wrapper.phase_list_ready.then(() => {
+		const project = frappe.get_route()[1] || "";
+		if (wrapper.phase_list_shown) {
+			wrapper.phase_list.reload().then(() => wrapper.phase_list.set_project(project));
+		} else {
+			wrapper.phase_list_shown = true;
+			wrapper.phase_list.set_project(project);
+		}
+	});
 };

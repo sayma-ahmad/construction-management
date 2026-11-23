@@ -4,15 +4,6 @@ frappe.provide("construction_management");
 
 construction_management.PROJECT_STATUSES = ["Planning", "In Progress", "On Hold", "Completed"];
 
-construction_management.PROJECT_PHASES = [
-	"Site Preparation",
-	"Foundation",
-	"Structure",
-	"MEP Works",
-	"Finishing",
-	"Handover",
-];
-
 construction_management.SAMPLE_PROJECTS = [
 	{
 		name: "Riverside Apartments",
