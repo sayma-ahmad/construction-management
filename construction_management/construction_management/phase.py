@@ -35,12 +35,13 @@ def get_project_phases(project_name=None, project_code=None):
 		for p in frappe.get_all(
 			"Project",
 			filters={"name": ["in", list({ph.project for ph in phases}) or [""]]},
-			fields=["name", "project_name", "status"],
+			fields=["name", "project_name", "status", "cm_project_code"],
 		)
 	}
 	for phase in phases:
 		project = projects.get(phase.project, {})
 		phase.project_name = project.get("project_name") or phase.project
+		phase.project_code = project.get("cm_project_code") or phase.project
 		phase.display_status = phase.status
 		if phase.status == "In Progress" and project.get("status") == "On hold":
 			phase.display_status = "On Hold"

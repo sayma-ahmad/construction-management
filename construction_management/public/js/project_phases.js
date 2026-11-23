@@ -20,6 +20,7 @@ construction_management.load_phases = function (args = {}) {
 					number: p.sequence || position[p.project],
 					project: p.project,
 					project_name: p.project_name,
+					project_code: p.project_code,
 					start: p.start_date,
 					end: p.end_date,
 					status: p.display_status || p.status,
@@ -69,14 +70,8 @@ construction_management.show_phase_create_dialog = function ({ project, on_saved
 	dialog.show();
 };
 
-// Project Details still identifies projects by their sample code; ERPNext projects are matched by name.
 construction_management.open_phase_project = function (phase) {
-	const sample = construction_management.SAMPLE_PROJECTS.find((p) => p.name === phase.project_name);
-	if (sample) {
-		frappe.set_route("construction-project-details", sample.code, "phases");
-	} else {
-		frappe.set_route("Form", "Project Phase", phase.id);
-	}
+	frappe.set_route("construction-project-details", phase.project_code || phase.project, "phases");
 };
 
 // Table of phases with search and filters. Used on the Project Phases page (all projects)
@@ -187,14 +182,13 @@ construction_management.PhaseList = class PhaseList {
 		return this.$wrapper.find(`select[data-filter="${name}"]`).val() || "";
 	}
 
-	// Accepts an ERPNext Project name or a Project Details sample code (for example PRJ-002).
+	// Accepts an ERPNext Project name or a Project Code (for example PRJ-002).
 	set_project(value) {
 		this.ready.then(() => {
 			const $project = this.$wrapper.find('select[data-filter="project"]');
 			let match = value && $project.find(`option[value="${value}"]`).length ? value : "";
-			const sample = value && construction_management.get_project && construction_management.get_project(value);
-			if (!match && sample) {
-				match = $project.find("option").filter((_, o) => $(o).text() === sample.name).first().val() || "";
+			if (!match && value) {
+				match = this.phases.find((p) => p.project_code === value)?.project || "";
 			}
 			$project.val(match);
 			this.render();

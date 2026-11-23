@@ -44,12 +44,14 @@ def get_construction_tasks(project_name=None, project_code=None):
 	)
 
 	project_names = _names("Project", "project_name", {t.project for t in tasks})
+	project_codes = _names("Project", "cm_project_code", {t.project for t in tasks})
 	phase_names = _names("Task", "subject", {t.parent_task for t in tasks})
 	users = {user for t in tasks for user in json.loads(t._assign or "[]")}
 	user_names = _names("User", "full_name", users)
 
 	for task in tasks:
 		task.project_name = project_names.get(task.project, task.project)
+		task.project_code = project_codes.get(task.project) or task.project
 		task.phase = phase_names.get(task.parent_task, "")
 		task.assigned_to = ", ".join(user_names.get(u, u) for u in json.loads(task.pop("_assign") or "[]"))
 

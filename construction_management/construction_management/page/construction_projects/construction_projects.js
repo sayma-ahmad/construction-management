@@ -2,6 +2,7 @@ const CM_SHARED_ASSETS = [
 	"/assets/construction_management/js/sample_projects.js",
 	"/assets/construction_management/css/construction_management.css",
 ];
+const CM_PROJECTS_METHOD = "construction_management.construction_management.project.get_construction_projects";
 
 frappe.pages["construction-projects"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
@@ -10,21 +11,38 @@ frappe.pages["construction-projects"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
-	page.set_primary_action(__("New Project"), show_create_placeholder, "add");
+	if (frappe.model.can_create("Project")) {
+		page.set_primary_action(__("New Project"), () => frappe.set_route("Form", "Project", "new"), "add");
+	}
 	page.set_secondary_action(__("Workspace"), () => frappe.set_route("construction-management"));
 
 	frappe.require(CM_SHARED_ASSETS, () => {
-		new ProjectList(page, construction_management.SAMPLE_PROJECTS);
+		wrapper.project_list = new ProjectList(page);
 	});
 };
 
+frappe.pages["construction-projects"].on_page_show = function (wrapper) {
+	if (wrapper.project_list) {
+		wrapper.project_list.reload();
+	}
+};
+
 class ProjectList {
-	constructor(page, projects) {
+	constructor(page) {
 		this.page = page;
-		this.projects = projects;
+		this.projects = [];
 		this.make_filters();
 		this.make_layout();
-		this.render();
+		this.reload();
+	}
+
+	reload() {
+		this.show_message(__("Loading projects..."));
+		return frappe.call({ method: CM_PROJECTS_METHOD }).then((r) => {
+			this.projects = r.message || [];
+			this.refresh_location_options();
+			this.render();
+		});
 	}
 
 	make_filters() {
@@ -44,14 +62,21 @@ class ProjectList {
 			change: () => this.render(),
 		});
 
-		const locations = [...new Set(this.projects.map((p) => p.location))].sort();
 		this.location = this.page.add_field({
 			fieldname: "location",
 			label: __("Location"),
 			fieldtype: "Select",
-			options: ["", ...locations],
+			options: [""],
 			change: () => this.render(),
 		});
+	}
+
+	refresh_location_options() {
+		const current = this.location.get_value();
+		const locations = [...new Set(this.projects.map((p) => p.location).filter(Boolean))].sort();
+		this.location.df.options = ["", ...locations];
+		this.location.refresh();
+		this.location.set_input(locations.includes(current) ? current : "");
 	}
 
 	make_layout() {
@@ -71,6 +96,7 @@ class ProjectList {
 									<th>${__("Client")}</th>
 									<th>${__("Location")}</th>
 									<th>${__("Status")}</th>
+									<th>${__("Progress")}</th>
 									<th>${__("Start Date")}</th>
 									<th>${__("End Date")}</th>
 									<th></th>
@@ -103,9 +129,13 @@ class ProjectList {
 		return this.projects.filter((p) => {
 			const matches_search =
 				!search ||
-				[p.name, p.code, p.client, p.location].some((value) => value.toLowerCase().includes(search));
+				[p.name, p.code, p.client, p.location].some((value) => (value || "").toLowerCase().includes(search));
 			return matches_search && (!status || p.status === status) && (!location || p.location === location);
 		});
+	}
+
+	show_message(message) {
+		this.$wrapper.find("tbody").html(`<tr><td colspan="9" class="cm-projects-empty">${message}</td></tr>`);
 	}
 
 	render() {
@@ -115,16 +145,17 @@ class ProjectList {
 			.find(".cm-projects-count")
 			.text(__("Showing {0} of {1} projects", [projects.length, this.projects.length]));
 
-		const rows = projects.length
-			? projects.map(project_row).join("")
-			: `<tr><td colspan="8" class="cm-projects-empty">${__("No projects match the selected filters.")}</td></tr>`;
-
-		this.$wrapper.find("tbody").html(rows);
+		if (!projects.length) {
+			this.show_message(__("No projects match the selected filters."));
+			return;
+		}
+		this.$wrapper.find("tbody").html(projects.map(project_row).join(""));
 	}
 }
 
 function project_row(project) {
 	const esc = frappe.utils.escape_html;
+	const date = (value) => (value ? frappe.datetime.str_to_user(value) : "");
 	return `
 		<tr data-code="${esc(project.code)}" title="${__("Open project details")}">
 			<td class="cm-projects-name">${esc(project.name)}</td>
@@ -132,17 +163,23 @@ function project_row(project) {
 			<td>${esc(project.client)}</td>
 			<td>${esc(project.location)}</td>
 			<td>${construction_management.status_pill(project.status)}</td>
-			<td class="cm-projects-nowrap">${frappe.datetime.str_to_user(project.start)}</td>
-			<td class="cm-projects-nowrap">${frappe.datetime.str_to_user(project.end)}</td>
+			<td>${progress_cell(project.progress)}</td>
+			<td class="cm-projects-nowrap">${date(project.start)}</td>
+			<td class="cm-projects-nowrap">${date(project.end)}</td>
 			<td class="cm-projects-open">${frappe.utils.icon("right", "sm")}</td>
 		</tr>
 	`;
 }
 
-function show_create_placeholder() {
-	frappe.msgprint({
-		title: __("New Project"),
-		message: __("Project creation will be available in a later release."),
-		indicator: "blue",
-	});
+function progress_cell(progress) {
+	if (progress === null || progress === undefined) {
+		return `<span class="cm-projects-muted">${__("Not set")}</span>`;
+	}
+	const percent = Math.round(progress);
+	return `
+		<div class="cm-progress">
+			<div class="cm-progress-bar"><div class="cm-progress-fill" style="width: ${percent}%"></div></div>
+			<span class="cm-progress-value">${percent}%</span>
+		</div>
+	`;
 }

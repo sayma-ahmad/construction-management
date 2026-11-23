@@ -88,6 +88,7 @@ doctype_js = {
 after_install = [
 	"construction_management.materials.setup",
 	"construction_management.vendors.setup",
+	"construction_management.construction_management.project.setup",
 	"construction_management.purchase_orders.setup",
 	"construction_management.construction_management.material_request.setup",
 	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
@@ -97,6 +98,7 @@ after_install = [
 after_migrate = [
 	"construction_management.materials.setup",
 	"construction_management.vendors.setup",
+	"construction_management.construction_management.project.setup",
 	"construction_management.purchase_orders.setup",
 	"construction_management.construction_management.material_request.setup",
 	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",

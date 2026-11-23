@@ -17,7 +17,7 @@ from erpnext.stock.doctype.purchase_receipt.purchase_receipt import (
 	make_purchase_invoice as make_pi_from_pr,
 )
 from frappe import _
-from frappe.utils import add_days, cint, flt, nowdate, nowtime
+from frappe.utils import add_days, cint, date_diff, flt, getdate, nowdate, nowtime
 
 from construction_management import materials, vendors
 from construction_management.construction_management.doctype.daily_progress_report.daily_progress_report import (
@@ -80,6 +80,8 @@ SAMPLE_PROJECTS = (
 		"project_name": "Riverside Apartments",
 		"status": "Open",
 		"percent_complete": 78.0,
+		"project_code": "PRJ-001",
+		"site_location": "Pune",
 		"start_offset": -180,
 		"end_offset": 90,
 		"notes": "Two residential towers with 180 apartments and basement parking.",
@@ -91,6 +93,8 @@ SAMPLE_PROJECTS = (
 		"project_name": "Metro Office Tower",
 		"status": "Open",
 		"percent_complete": 54.0,
+		"project_code": "PRJ-002",
+		"site_location": "Mumbai",
 		"start_offset": -150,
 		"end_offset": 180,
 		"notes": "22-floor commercial office tower with retail on the ground floor.",
@@ -102,6 +106,8 @@ SAMPLE_PROJECTS = (
 		"project_name": "Green Valley Villas",
 		"status": "On hold",
 		"percent_complete": 32.0,
+		"project_code": "PRJ-003",
+		"site_location": "Bengaluru",
 		"start_offset": -210,
 		"end_offset": -10,
 		"notes": "Gated community of 40 independent villas. Paused for permit revision.",
@@ -113,6 +119,8 @@ SAMPLE_PROJECTS = (
 		"project_name": "City Mall Renovation",
 		"status": "Open",
 		"percent_complete": 40.0,
+		"project_code": "PRJ-004",
+		"site_location": "Delhi",
 		"start_offset": -90,
 		"end_offset": 10,
 		"notes": "Facade upgrade, new food court and HVAC replacement.",
@@ -124,6 +132,8 @@ SAMPLE_PROJECTS = (
 		"project_name": "Sunrise School Block",
 		"status": "Completed",
 		"percent_complete": 100.0,
+		"project_code": "PRJ-006",
+		"site_location": "Pune",
 		"start_offset": -300,
 		"end_offset": -30,
 		"notes": "Three-storey academic block with labs and an auditorium.",
@@ -570,6 +580,7 @@ def _ensure_projects(counts, company, today):
 			"name",
 		)
 		if existing:
+			_fill_construction_fields(existing, spec)
 			projects_by_key[spec["key"]] = existing
 			_record(counts, "Project", created=False)
 			continue
@@ -588,6 +599,8 @@ def _ensure_projects(counts, company, today):
 				"doctype": "Project",
 				"naming_series": "PROJ-.####",
 				"project_name": spec["project_name"],
+				"cm_project_code": spec["project_code"],
+				"cm_site_location": spec["site_location"],
 				"company": company,
 				"status": spec["status"],
 				"percent_complete_method": "Manual",
@@ -602,6 +615,18 @@ def _ensure_projects(counts, company, today):
 		projects_by_key[spec["key"]] = doc.name
 		_record(counts, "Project", created=True)
 	return projects_by_key
+
+
+def _fill_construction_fields(project, spec):
+	"""Set Project Code and Site Location on a sample project created before these fields existed."""
+	values = frappe.db.get_value("Project", project, ["cm_project_code", "cm_site_location"], as_dict=True)
+	updates = {}
+	if not values.cm_project_code:
+		updates["cm_project_code"] = spec["project_code"]
+	if not values.cm_site_location:
+		updates["cm_site_location"] = spec["site_location"]
+	if updates:
+		frappe.db.set_value("Project", project, updates)
 
 
 def _ensure_tasks(counts, projects_by_key, today):
@@ -679,14 +704,22 @@ PHASE_STATUS_FROM_TASK = {"Working": "In Progress", "Open": "Not Started", "Comp
 
 SAMPLE_PHASE_PLANS = {
 	"PRJ-01": (
-		("PHASE-R1", "Site Preparation", "2025-08-01", "2025-10-31", "Completed", 100),
-		("PHASE-01", "Foundation Works", "2025-11-01", "2026-02-15", "Completed", 100),
-		("PHASE-R3", "Structure", "2026-02-16", "2026-06-30", "Completed", 100),
-		("PHASE-R4", "MEP Works", "2026-07-01", "2026-10-15", "Completed", 100),
-		("PHASE-02", "Finishing Works", "2026-10-16", "2026-12-31", "In Progress", 68),
-		("PHASE-R6", "Handover", "2027-01-01", "2027-02-15", "Not Started", 0),
+		("PHASE-R1", "Site Preparation", "Completed", 100),
+		("PHASE-01", "Foundation Works", "Completed", 100),
+		("PHASE-R3", "Structure", "Completed", 100),
+		("PHASE-R4", "MEP Works", "Completed", 100),
+		("PHASE-02", "Finishing Works", "In Progress", 68),
+		("PHASE-R6", "Handover", "Not Started", 0),
 	),
 }
+
+
+def _split_project_dates(project, parts):
+	"""Split the project's expected dates into back-to-back (start, end) ranges."""
+	start, end = frappe.db.get_value("Project", project, ["expected_start_date", "expected_end_date"])
+	days = date_diff(end, start) + 1
+	bounds = [add_days(start, days * i // parts) for i in range(parts + 1)]
+	return [(getdate(bounds[i]), getdate(add_days(bounds[i + 1], -1))) for i in range(parts)]
 
 
 def _sample_phase_rows(projects_by_key, today):
@@ -696,7 +729,8 @@ def _sample_phase_rows(projects_by_key, today):
 		project = projects_by_key.get(proj_key)
 		if not project:
 			continue
-		for sequence, (phase_key, phase_name, start, end, status, progress) in enumerate(plan, 1):
+		dates = _split_project_dates(project, len(plan))
+		for sequence, ((phase_key, phase_name, status, progress), (start, end)) in enumerate(zip(plan, dates), 1):
 			rows.append(
 				(
 					phase_key,

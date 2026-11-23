@@ -15,6 +15,7 @@ const CM_PROJECT_TABS = [
 	{ key: "materials", label: "Materials" },
 ];
 
+const CM_PROJECT_METHOD = "construction_management.construction_management.project.get_construction_project";
 const CM_PROJECT_DPRS_METHOD =
 	"construction_management.construction_management.doctype.daily_progress_report.daily_progress_report.get_project_dprs";
 const CM_PROJECT_WORK_ORDERS_METHOD =
@@ -35,7 +36,7 @@ frappe.pages["construction-project-details"].on_page_load = function (wrapper) {
 	wrapper.project_details = new ProjectDetails(page);
 };
 
-// Route: /app/construction-project-details/<project code>[/<tab>]
+// Route: /app/construction-project-details/<project code or ERPNext Project name>[/<tab>]
 frappe.pages["construction-project-details"].on_page_show = function (wrapper) {
 	const route = frappe.get_route();
 	wrapper.project_details.show(route[1], route[2]);
@@ -50,17 +51,36 @@ class ProjectDetails {
 	}
 
 	show(code, tab) {
-		this.ready.then(() => {
-			const project = construction_management.SAMPLE_PROJECTS.find((p) => p.code === code);
-			if (!project) {
-				this.render_not_found();
-				return;
-			}
-			this.project = project;
-			this.page.set_title(project.name);
-			this.render();
-			this.set_tab(CM_PROJECT_TABS.some((t) => t.key === tab) ? tab : "overview");
-		});
+		this.ready
+			.then(() => frappe.call({ method: CM_PROJECT_METHOD, args: { key: code } }))
+			.then((r) => {
+				if (frappe.get_route()[1] !== code) {
+					return;
+				}
+				if (!r.message) {
+					this.render_not_found();
+					return;
+				}
+				this.project = this.to_project(r.message);
+				this.page.set_title(this.project.name);
+				this.render();
+				this.set_tab(CM_PROJECT_TABS.some((t) => t.key === tab) ? tab : "overview");
+			});
+	}
+
+	// Sample projects still supply the manager and description, which ERPNext Projects do not store.
+	to_project(data) {
+		const sample = construction_management.SAMPLE_PROJECTS.find((p) => p.code === data.code) || {};
+		return {
+			...data,
+			client: data.client || sample.client || "",
+			manager: sample.manager || "",
+			description: sample.description || frappe.utils.html2text(data.notes || "").trim(),
+		};
+	}
+
+	progress_text(progress) {
+		return progress === null || progress === undefined ? __("Not set") : `${Math.round(progress)}%`;
 	}
 
 	render() {
@@ -70,15 +90,15 @@ class ProjectDetails {
 
 		this.$wrapper.html(`
 			<div class="cm-pd-header">
-				<span class="cm-pd-subtitle">${esc(p.code)} · ${esc(p.client)} · ${esc(p.location)}</span>
+				<span class="cm-pd-subtitle">${esc([p.code, p.client, p.location].filter(Boolean).join(" · "))}</span>
 				${construction_management.status_pill(p.status)}
 			</div>
 
 			<div class="cm-pd-summary">
 				<div class="cm-pd-card cm-pd-stat">
 					<div class="cm-pd-stat-label">${__("Project Progress")}</div>
-					<div class="cm-pd-stat-value">${p.progress}%</div>
-					${this.progress_bar(p.progress)}
+					<div class="cm-pd-stat-value">${this.progress_text(p.progress)}</div>
+					${this.progress_bar(Math.round(p.progress || 0))}
 				</div>
 				${this.stat_card(__("Total Tasks"), p.total_tasks, __("Across all phases"))}
 				${this.stat_card(__("Completed Tasks"), p.completed_tasks, __("{0}% of all tasks", [this.percent(p.completed_tasks, p.total_tasks)]))}
@@ -174,7 +194,7 @@ class ProjectDetails {
 		this.$wrapper.html(`
 			<div class="cm-pd-card cm-pd-empty">
 				<div class="cm-pd-empty-title">${__("Project not found")}</div>
-				<div class="cm-pd-empty-text">${__("This project does not exist in the sample data.")}</div>
+				<div class="cm-pd-empty-text">${__("This project does not exist or you do not have access to it.")}</div>
 				<button class="btn btn-sm btn-default cm-pd-back">${__("Back to Projects")}</button>
 			</div>
 		`);
@@ -213,12 +233,14 @@ class ProjectDetails {
 			[__("Location"), esc(p.location)],
 			[__("Status"), construction_management.status_pill(p.status)],
 			[__("Project Manager"), esc(p.manager)],
-			[__("Start Date"), frappe.datetime.str_to_user(p.start)],
-			[__("End Date"), frappe.datetime.str_to_user(p.end)],
+			[__("Start Date"), p.start ? frappe.datetime.str_to_user(p.start) : ""],
+			[__("End Date"), p.end ? frappe.datetime.str_to_user(p.end) : ""],
 		];
 
-		const total_days = Math.max(frappe.datetime.get_diff(p.end, p.start), 1);
-		const elapsed_days = Math.min(Math.max(frappe.datetime.get_diff(frappe.datetime.get_today(), p.start), 0), total_days);
+		const total_days = p.start && p.end ? Math.max(frappe.datetime.get_diff(p.end, p.start), 1) : 0;
+		const elapsed_days = total_days
+			? Math.min(Math.max(frappe.datetime.get_diff(frappe.datetime.get_today(), p.start), 0), total_days)
+			: 0;
 
 		return `
 			<div class="cm-pd-overview">
@@ -244,14 +266,14 @@ class ProjectDetails {
 					<div class="cm-pd-progress-row">
 						<div class="cm-pd-progress-label">
 							<span>${__("Work Completed")}</span>
-							<span>${p.progress}%</span>
+							<span>${this.progress_text(p.progress)}</span>
 						</div>
-						${this.progress_bar(p.progress)}
+						${this.progress_bar(Math.round(p.progress || 0))}
 					</div>
 					<div class="cm-pd-progress-row">
 						<div class="cm-pd-progress-label">
 							<span>${__("Time Elapsed")}</span>
-							<span>${__("{0} of {1} days", [elapsed_days, total_days])}</span>
+							<span>${total_days ? __("{0} of {1} days", [elapsed_days, total_days]) : __("Dates not set")}</span>
 						</div>
 						${this.progress_bar(this.percent(elapsed_days, total_days), "time")}
 					</div>

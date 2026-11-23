@@ -8,15 +8,6 @@ construction_management.TASK_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 
 construction_management.TASKS_METHOD = "construction_management.construction_management.task.get_construction_tasks";
 
-construction_management.get_project = function (code) {
-	return construction_management.SAMPLE_PROJECTS.find((p) => p.code === code);
-};
-
-// Project Details still identifies projects by their sample code; map an ERPNext project to it by name.
-construction_management.get_project_by_name = function (project_name) {
-	return construction_management.SAMPLE_PROJECTS.find((p) => p.name === project_name);
-};
-
 construction_management.load_tasks = function (args = {}) {
 	return frappe
 		.call({ method: construction_management.TASKS_METHOD, args })
@@ -29,6 +20,7 @@ construction_management.load_tasks = function (args = {}) {
 					subject: t.subject || "",
 					project: t.project || "",
 					project_name: t.project_name || "",
+					project_code: t.project_code || "",
 					phase: t.phase || "",
 					assigned_to: t.assigned_to || "",
 					priority: t.priority || "",
@@ -97,8 +89,7 @@ construction_management.show_task_create_dialog = function ({ project, on_saved 
 construction_management.show_task_details = function (task, { on_saved } = {}) {
 	const esc = frappe.utils.escape_html;
 	const route = frappe.get_route();
-	const sample = construction_management.get_project_by_name(task.project_name);
-	const on_project_page = route[0] === "construction-project-details" && sample && route[1] === sample.code;
+	const on_project_page = route[0] === "construction-project-details" && !!task.project_code && route[1] === task.project_code;
 	const can_edit = frappe.model.can_write("Task");
 
 	const summary = [
@@ -151,13 +142,9 @@ construction_management.show_task_details = function (task, { on_saved } = {}) {
 	dialog.show();
 };
 
-// Opens Project Details for projects that exist there, otherwise the ERPNext Project form.
 construction_management.open_task_project = function (task) {
-	const sample = construction_management.get_project_by_name(task.project_name);
-	if (sample) {
-		frappe.set_route("construction-project-details", sample.code);
-	} else if (task.project) {
-		frappe.set_route("Form", "Project", task.project);
+	if (task.project) {
+		frappe.set_route("construction-project-details", task.project_code || task.project);
 	}
 };
 
@@ -273,15 +260,13 @@ construction_management.TaskList = class TaskList {
 		return this.$wrapper.find(`select[data-filter="${name}"]`).val() || "";
 	}
 
-	// Accepts an ERPNext Project name or a Project Details sample code (for example PRJ-001).
+	// Accepts an ERPNext Project name or a Project Code (for example PRJ-001).
 	set_project(value) {
 		this.ready.then(() => {
 			const $project = this.$wrapper.find('select[data-filter="project"]');
 			let match = value && $project.find(`option[value="${value}"]`).length ? value : "";
-			const sample = value && construction_management.get_project(value);
-			if (!match && sample) {
-				const option = $project.find("option").filter((_, o) => $(o).text() === sample.name).first();
-				match = option.val() || "";
+			if (!match && value) {
+				match = this.tasks.find((t) => t.project_code === value)?.project || "";
 			}
 			$project.val(match);
 			this.render();
