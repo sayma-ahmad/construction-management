@@ -19,6 +19,7 @@ frappe.ui.form.on("Daily Progress Report", {
 			return {
 				filters: {
 					project: frm.doc.project,
+					is_group: 0,
 				},
 			};
 		});
