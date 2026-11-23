@@ -156,5 +156,25 @@
   "share": 1,
   "submit": 0,
   "write": 1
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "name": "cm-address-perm-purchase-manager-0",
+  "parent": "Address",
+  "parentfield": "permissions",
+  "parenttype": "DocType",
+  "permlevel": 0,
+  "read": 1,
+  "role": "Purchase Manager"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "name": "cm-address-perm-purchase-master-manager-0",
+  "parent": "Address",
+  "parentfield": "permissions",
+  "parenttype": "DocType",
+  "permlevel": 0,
+  "read": 1,
+  "role": "Purchase Master Manager"
  }
 ]

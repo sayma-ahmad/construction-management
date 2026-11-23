@@ -4,7 +4,7 @@
 import frappe
 from frappe.utils import cint
 
-CUSTOMIZED_STANDARD_DOCTYPES = ("Material Request", "Item", "Issue", "Issue Type", "Issue Priority", "Task")
+CUSTOMIZED_STANDARD_DOCTYPES = ("Material Request", "Item", "Issue", "Issue Type", "Issue Priority", "Task", "Address")
 DOCPERM_FLAG_FIELDS = (
 	"read",
 	"write",

@@ -185,8 +185,8 @@ fixtures = [
 	{
 		"dt": "Custom DocPerm",
 		"filters": [
-			["parent", "in", ["Material Request", "Item", "Issue", "Issue Type", "Issue Priority", "Task"]],
-			["role", "in", ["Projects Manager", "Projects User"]],
+			["parent", "in", ["Material Request", "Item", "Issue", "Issue Type", "Issue Priority", "Task", "Address"]],
+			["name", "like", "cm-%"],
 		],
 	},
 	{
