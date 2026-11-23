@@ -59,7 +59,13 @@ class ProjectDetails {
 		this.page = page;
 		this.ready = frappe.require(CM_PROJECT_DETAIL_ASSETS);
 		this.$wrapper = $(`<div class="cm-pd"></div>`).appendTo(page.main);
-		this.$wrapper.on("click", ".cm-pd-tab", (e) => this.set_tab($(e.currentTarget).attr("data-tab")));
+		this.$wrapper.on("click", ".cm-pd-tab", (e) => {
+			const tab = $(e.currentTarget).attr("data-tab");
+			if (this.project && this.project.code) {
+				frappe.set_route("construction-project-details", this.project.code, tab);
+			}
+			this.set_tab(tab);
+		});
 	}
 
 	show(code, tab) {
@@ -69,9 +75,12 @@ class ProjectDetails {
 				this.render_not_found();
 				return;
 			}
+			const code_changed = !this.project || this.project.code !== code;
 			this.project = project;
 			this.page.set_title(project.name);
-			this.render();
+			if (code_changed) {
+				this.render();
+			}
 			this.set_tab(CM_PROJECT_TABS.some((t) => t.key === tab) ? tab : "overview");
 		});
 	}
@@ -109,19 +118,13 @@ class ProjectDetails {
 			<div class="cm-pd-panel" data-panel="phases"></div>
 			<div class="cm-pd-panel" data-panel="dpr">${this.dpr_loading_panel()}</div>
 			<div class="cm-pd-panel" data-panel="work_orders">${this.work_orders_loading_panel()}</div>
-			${Object.keys(CM_PROJECT_PLACEHOLDERS)
-				.map((key) => `<div class="cm-pd-panel" data-panel="${key}">${this.placeholder_panel(key)}</div>`)
-				.join("")}
-		`);
-		this._dprs_loaded = false;
-		this._dprs_loading = false;
-		this._work_orders_loaded = false;
-		this._work_orders_loading = false;
 			<div class="cm-pd-panel" data-panel="issues">${this.issues_loading_panel()}</div>
 			<div class="cm-pd-panel" data-panel="materials">${this.materials_loading_panel()}</div>
 		`);
 		this._dprs_loaded = false;
 		this._dprs_loading = false;
+		this._work_orders_loaded = false;
+		this._work_orders_loading = false;
 		this._materials_loaded = false;
 		this._materials_loading = false;
 		this._issues_loaded = false;
@@ -192,6 +195,7 @@ class ProjectDetails {
 		}
 		if (key === "work_orders" && this.project && !this._work_orders_loaded && !this._work_orders_loading) {
 			this.load_work_orders();
+		}
 		if (key === "materials" && this.project && !this._materials_loaded && !this._materials_loading) {
 			this.load_materials();
 		}
@@ -400,6 +404,10 @@ class ProjectDetails {
 			<div class="cm-pd-card cm-pd-empty">
 				<div class="cm-pd-empty-title">${__("Work Orders")}</div>
 				<div class="cm-pd-empty-text">${__("Loading Work Orders...")}</div>
+			</div>
+		`;
+	}
+
 	materials_loading_panel() {
 		return `
 			<div class="cm-pd-card cm-pd-empty">
@@ -416,13 +424,6 @@ class ProjectDetails {
 
 		frappe.call({
 			method: CM_PROJECT_WORK_ORDERS_METHOD,
-	load_materials() {
-		const current_code = this.project?.code;
-		const $panel = this.$wrapper.find('.cm-pd-panel[data-panel="materials"]');
-		this._materials_loading = true;
-
-		frappe.call({
-			method: CM_PROJECT_MATERIALS_METHOD,
 			args: {
 				project_name: this.project.name,
 				project_code: this.project.code,
@@ -438,16 +439,6 @@ class ProjectDetails {
 			},
 			error: () => {
 				this._work_orders_loading = false;
-				this._materials_loading = false;
-				if (this.project?.code !== current_code) {
-					return;
-				}
-				this._materials_loaded = true;
-				const data = r.message || {};
-				this.render_materials_panel($panel, data.mapped_project, data.material_requests || []);
-			},
-			error: () => {
-				this._materials_loading = false;
 				if (this.project?.code !== current_code) {
 					return;
 				}
@@ -468,20 +459,6 @@ class ProjectDetails {
 	render_work_orders_panel($panel, mapped_project, work_orders) {
 		const esc = frappe.utils.escape_html;
 		const can_create_wo = frappe.model.can_create("Construction Work Order");
-						<div class="cm-pd-empty-title">${__("Unable to load Material Requisitions")}</div>
-						<div class="cm-pd-empty-text">${__("Please try again or open the Material Requisitions page.")}</div>
-						<button class="btn btn-sm btn-default cm-pd-open-mrs">${__("Open Material Requisitions")}</button>
-					</div>
-				`);
-				$panel
-					.find(".cm-pd-open-mrs")
-					.on("click", () => frappe.set_route("material-requisitions"));
-			},
-		});
-	}
-
-	render_materials_panel($panel, mapped_project, material_requests) {
-		const esc = frappe.utils.escape_html;
 
 		if (!mapped_project) {
 			$panel.html(`
@@ -515,6 +492,101 @@ class ProjectDetails {
 								<td>${esc(row.title || "")}</td>
 								<td>${esc(contractor_label)}</td>
 								<td><span class="cm-status cm-status-${status_class}">${__(status)}</span></td>
+								<td>${frappe.utils.icon("right", "sm")}</td>
+							</tr>
+						`;
+				})
+				.join("")
+			: `<tr><td colspan="5" class="cm-pd-empty-text" style="text-align:center; padding: 24px;">${__(
+				"No Work Orders recorded for this project yet."
+			)}</td></tr>`;
+
+		$panel.html(`
+			<div class="cm-pd-card">
+				<div class="cm-pd-wo-header">
+					<div class="cm-pd-card-title">${__("Work Orders")}</div>
+					<div class="cm-pd-wo-actions">
+						<button class="btn btn-xs btn-default cm-pd-open-work-orders">${__("View All")}</button>
+						${can_create_wo ? `<button class="btn btn-xs btn-primary cm-pd-new-work-order">${__("New Work Order")}</button>` : ""}
+					</div>
+				</div>
+				<div class="cm-pd-wo-table-wrap">
+					<table class="cm-pd-wo-table">
+						<thead>
+							<tr>
+								<th>${__("Work Order ID")}</th>
+								<th>${__("Title")}</th>
+								<th>${__("Contractor")}</th>
+								<th>${__("Status")}</th>
+								<th></th>
+							</tr>
+						</thead>
+						<tbody>${rows_html}</tbody>
+					</table>
+				</div>
+			</div>
+		`);
+
+		$panel
+			.find(".cm-pd-open-work-orders")
+			.on("click", () => frappe.set_route("construction-work-orders"));
+		if (can_create_wo) {
+			$panel
+				.find(".cm-pd-new-work-order")
+				.on("click", () => frappe.new_doc("Construction Work Order", { project: mapped_project }));
+		}
+		$panel
+			.off("click", "tbody tr[data-work-order]")
+			.on("click", "tbody tr[data-work-order]", (e) => {
+				frappe.set_route("Form", "Construction Work Order", $(e.currentTarget).attr("data-work-order"));
+			});
+	}
+
+	load_materials() {
+		const current_code = this.project?.code;
+		const $panel = this.$wrapper.find('.cm-pd-panel[data-panel="materials"]');
+		this._materials_loading = true;
+
+		frappe.call({
+			method: CM_PROJECT_MATERIALS_METHOD,
+			args: {
+				project_name: this.project.name,
+				project_code: this.project.code,
+			},
+			callback: (r) => {
+				this._materials_loading = false;
+				if (this.project?.code !== current_code) {
+					return;
+				}
+				this._materials_loaded = true;
+				const data = r.message || {};
+				this.render_materials_panel($panel, data.mapped_project, data.material_requests || []);
+			},
+			error: () => {
+				this._materials_loading = false;
+				if (this.project?.code !== current_code) {
+					return;
+				}
+				$panel.html(`
+					<div class="cm-pd-card cm-pd-empty">
+						<div class="cm-pd-empty-title">${__("Unable to load Material Requisitions")}</div>
+						<div class="cm-pd-empty-text">${__("Please try again or open the Material Requests list.")}</div>
+						<button class="btn btn-sm btn-default cm-pd-open-materials">${__("Open Material Requests")}</button>
+					</div>
+				`);
+				$panel
+					.find(".cm-pd-open-materials")
+					.on("click", () => frappe.set_route("List", "Material Request"));
+			},
+		});
+	}
+
+	render_materials_panel($panel, mapped_project, material_requests) {
+		const esc = frappe.utils.escape_html;
+
+		if (!mapped_project) {
+			$panel.html(`
+				<div class="cm-pd-card cm-pd-empty">
 					<div class="cm-pd-empty-icon">${frappe.utils.icon("stock", "lg")}</div>
 					<div class="cm-pd-empty-title">${__("No Linked ERPNext Project Found")}</div>
 					<div class="cm-pd-empty-text">
@@ -701,27 +773,6 @@ class ProjectDetails {
 						`;
 				})
 				.join("")
-			: `<tr><td colspan="5" class="cm-pd-empty-text" style="text-align:center; padding: 24px;">${__(
-				"No Work Orders recorded for this project yet."
-			)}</td></tr>`;
-
-		$panel.html(`
-			<div class="cm-pd-card">
-				<div class="cm-pd-wo-header">
-					<div class="cm-pd-card-title">${__("Work Orders")}</div>
-					<div class="cm-pd-wo-actions">
-						<button class="btn btn-xs btn-default cm-pd-open-work-orders">${__("View All")}</button>
-						${can_create_wo ? `<button class="btn btn-xs btn-primary cm-pd-new-work-order">${__("New Work Order")}</button>` : ""}
-					</div>
-				</div>
-				<div class="cm-pd-wo-table-wrap">
-					<table class="cm-pd-wo-table">
-						<thead>
-							<tr>
-								<th>${__("Work Order ID")}</th>
-								<th>${__("Title")}</th>
-								<th>${__("Contractor")}</th>
-								<th>${__("Status")}</th>
 			: `<tr><td colspan="7" class="cm-pd-empty-text" style="text-align:center; padding: 24px;">${__(
 				"No Construction Issues recorded for this project yet."
 			)}</td></tr>`;
@@ -757,19 +808,6 @@ class ProjectDetails {
 		`);
 
 		$panel
-			.find(".cm-pd-open-work-orders")
-			.on("click", () => frappe.set_route("construction-work-orders"));
-		if (can_create_wo) {
-			$panel
-				.find(".cm-pd-new-work-order")
-				.on("click", () => frappe.new_doc("Construction Work Order", { project: mapped_project }));
-		}
-		$panel
-			.off("click", "tbody tr[data-work-order]")
-			.on("click", "tbody tr[data-work-order]", (e) => {
-				frappe.set_route("Form", "Construction Work Order", $(e.currentTarget).attr("data-work-order"));
-			});
-	}
 			.find(".cm-pd-open-issues")
 			.on("click", () => frappe.set_route("construction-issues"));
 		if (can_create_issue) {
