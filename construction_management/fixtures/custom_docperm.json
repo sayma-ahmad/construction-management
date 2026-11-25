@@ -176,5 +176,93 @@
   "permlevel": 0,
   "read": 1,
   "role": "Purchase Master Manager"
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "name": "cm-project-perm-purchase-manager-0",
+  "parent": "Project",
+  "parentfield": "permissions",
+  "parenttype": "DocType",
+  "permlevel": 0,
+  "read": 1,
+  "role": "Purchase Manager",
+  "select": 1
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "name": "cm-project-perm-purchase-user-0",
+  "parent": "Project",
+  "parentfield": "permissions",
+  "parenttype": "DocType",
+  "permlevel": 0,
+  "read": 1,
+  "role": "Purchase User",
+  "select": 1
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "name": "cm-project-perm-stock-manager-0",
+  "parent": "Project",
+  "parentfield": "permissions",
+  "parenttype": "DocType",
+  "permlevel": 0,
+  "read": 1,
+  "role": "Stock Manager",
+  "select": 1
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "name": "cm-project-perm-stock-user-0",
+  "parent": "Project",
+  "parentfield": "permissions",
+  "parenttype": "DocType",
+  "permlevel": 0,
+  "read": 1,
+  "role": "Stock User",
+  "select": 1
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "name": "cm-warehouse-perm-stock-manager-0",
+  "parent": "Warehouse",
+  "parentfield": "permissions",
+  "parenttype": "DocType",
+  "permlevel": 0,
+  "read": 1,
+  "role": "Stock Manager",
+  "select": 1
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "name": "cm-warehouse-perm-purchase-manager-0",
+  "parent": "Warehouse",
+  "parentfield": "permissions",
+  "parenttype": "DocType",
+  "permlevel": 0,
+  "read": 1,
+  "role": "Purchase Manager",
+  "select": 1
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "name": "cm-item-perm-purchase-manager-0",
+  "parent": "Item",
+  "parentfield": "permissions",
+  "parenttype": "DocType",
+  "permlevel": 0,
+  "read": 1,
+  "role": "Purchase Manager",
+  "select": 1
+ },
+ {
+  "doctype": "Custom DocPerm",
+  "name": "cm-po-perm-stock-manager-0",
+  "parent": "Purchase Order",
+  "parentfield": "permissions",
+  "parenttype": "DocType",
+  "permlevel": 0,
+  "read": 1,
+  "role": "Stock Manager",
+  "select": 1
  }
 ]

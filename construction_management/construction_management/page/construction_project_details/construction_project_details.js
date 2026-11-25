@@ -223,7 +223,6 @@ class ProjectDetails {
 		if (key === "work_orders" && this.project && !this._work_orders_loaded && !this._work_orders_loading) {
 			this.load_work_orders();
 		}
-		}
 		if (key === "materials" && this.project && !this._materials_loaded && !this._materials_loading) {
 			this.load_materials();
 		}

@@ -115,7 +115,7 @@ function render_dashboard(container, data) {
 	$dashboard.find(".cm-activity-list").html((data.activity || []).map(activity_item).join(""));
 
 	// KPI card click handler with permission verification
-	$dashboard.find(".cm-kpi-grid").on("click", ".cm-kpi-clickable", function () {
+	$dashboard.find(".cm-kpi-grid").on("click", ".cm-kpi", function () {
 		const route = $(this).attr("data-route");
 		const doctype = $(this).attr("data-doctype");
 		if (doctype && !frappe.model.can_read(doctype)) {

@@ -403,11 +403,20 @@ def _get_financial_summary(company=None):
 		invoices = frappe.get_list(
 			"Purchase Invoice",
 			filters=filters,
-			fields=["name", "base_outstanding_amount", "base_grand_total", "outstanding_amount", "posting_date"],
+			fields=[
+				"name",
+				"base_grand_total",
+				"outstanding_amount",
+				"party_account_currency",
+				"conversion_rate",
+				"posting_date",
+			],
 			limit_page_length=0,
 		)
 		for inv in invoices:
-			base_out = flt(inv.base_outstanding_amount)
+			base_out = flt(inv.outstanding_amount)
+			if inv.party_account_currency and inv.party_account_currency != default_currency:
+				base_out *= flt(inv.conversion_rate) or 1
 			if base_out > 0:
 				total_payables += base_out
 				unpaid_count += 1
@@ -540,16 +549,19 @@ def _get_project_progress_table(company=None):
 	if company:
 		filters["company"] = company
 
+	fields = ["name", "project_name", "status", "percent_complete", "expected_end_date"]
+	if frappe.db.has_column("Project", "cm_site_location"):
+		fields.append("cm_site_location")
+
 	projects = frappe.get_list(
 		"Project",
 		filters=filters,
-		fields=["name", "project_name", "status", "percent_complete", "expected_end_date"],
+		fields=fields,
 		order_by="modified desc",
 		limit_page_length=8,
 	)
 
 	today = getdate(nowdate())
-	has_site_field = frappe.db.has_column("Project", "cm_delivery_site")
 
 	result = []
 	for p in projects:
@@ -565,15 +577,11 @@ def _get_project_progress_table(company=None):
 		else:
 			status = "On Track"
 
-		site = ""
-		if has_site_field:
-			site = frappe.db.get_value("Project", p.name, "cm_delivery_site") or ""
-
 		result.append(
 			{
 				"id": p.name,
 				"name": p.project_name or p.name,
-				"site": site,
+				"site": p.get("cm_site_location") or "",
 				"due": due_date,
 				"progress": pct,
 				"status": status,
