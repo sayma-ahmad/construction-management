@@ -4,6 +4,7 @@
 import json
 
 import frappe
+from frappe import _
 
 from construction_management.construction_management.utils import resolve_erpnext_project
 
@@ -27,6 +28,11 @@ def get_construction_tasks(project_name=None, project_code=None):
 
 	When a project name or code is given, only the matching ERPNext Project's tasks are returned.
 	"""
+	if frappe.db.exists("Page", "construction-tasks") and not frappe.get_cached_doc(
+		"Page", "construction-tasks"
+	).is_permitted():
+		frappe.throw(_("Not permitted to access Project Tasks"), frappe.PermissionError)
+
 	filters = {"is_group": 0, "status": ["not in", ["Template", "Cancelled"]]}
 	mapped_project = None
 	if project_name or project_code:

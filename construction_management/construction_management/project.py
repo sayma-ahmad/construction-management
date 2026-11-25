@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.utils import getdate, today
 
@@ -46,8 +47,13 @@ def setup():
 
 
 @frappe.whitelist()
-def get_construction_projects():
+def get_construction_projects(search=None, status=None, location=None):
 	"""Return the ERPNext Projects of the user's default company for the Projects page."""
+	if frappe.db.exists("Page", "construction-projects") and not frappe.get_cached_doc(
+		"Page", "construction-projects"
+	).is_permitted():
+		frappe.throw(_("Not permitted to access Construction Projects"), frappe.PermissionError)
+
 	filters = {}
 	company = frappe.defaults.get_user_default("Company")
 	if company:
@@ -60,12 +66,37 @@ def get_construction_projects():
 		order_by="project_name asc",
 		limit_page_length=0,
 	)
-	return [to_construction_project(p) for p in projects]
+	mapped = [to_construction_project(p) for p in projects]
+
+	search_term = (search or "").strip().lower()
+	status_filter = (status or "").strip()
+	location_filter = (location or "").strip()
+
+	if not search_term and not status_filter and not location_filter:
+		return mapped
+
+	filtered = []
+	for p in mapped:
+		if search_term and not any(
+			search_term in (p.get(key) or "").lower() for key in ("name", "code", "client", "location")
+		):
+			continue
+		if status_filter and p.get("status") != status_filter:
+			continue
+		if location_filter and (p.get("location") or "").strip() != location_filter:
+			continue
+		filtered.append(p)
+	return filtered
 
 
 @frappe.whitelist()
 def get_construction_project(key):
 	"""Return one ERPNext Project, found by its Project Code or its name, with task counts."""
+	if frappe.db.exists("Page", "construction-project-details") and not frappe.get_cached_doc(
+		"Page", "construction-project-details"
+	).is_permitted():
+		frappe.throw(_("Not permitted to access Project Details"), frappe.PermissionError)
+
 	matches = frappe.get_list(
 		"Project",
 		or_filters=[["Project", "cm_project_code", "=", key], ["Project", "name", "=", key]],

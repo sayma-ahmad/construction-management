@@ -14,6 +14,11 @@ def get_dashboard_data(company=None):
 	if frappe.session.user == "Guest":
 		frappe.throw(_("Authentication required to view dashboard data"), frappe.PermissionError)
 
+	if frappe.db.exists("Page", "construction-dashboard") and not frappe.get_cached_doc(
+		"Page", "construction-dashboard"
+	).is_permitted():
+		frappe.throw(_("Not permitted to access Construction Dashboard"), frappe.PermissionError)
+
 	if not company:
 		company = frappe.defaults.get_user_default("Company") or frappe.db.get_default("company")
 
@@ -119,6 +124,7 @@ def get_dashboard_data(company=None):
 		"task_status": _get_task_status_chart_data(company),
 		"projects": _get_project_progress_table(company),
 		"inventory": inventory_issues["chart"],
+		"expense_flow": _get_expense_flow_chart_data(company),
 		"activity": _get_recent_activity_feed(company),
 		"expense_flow": financial_summary.get("expense_flow"),
 	}
@@ -440,6 +446,87 @@ def _get_financial_summary(company=None):
 			"values": [round(v, 2) for v in monthly_expenses],
 			"currency": default_currency,
 		},
+	}
+
+
+def _get_expense_flow_chart_data(company=None):
+	"""Return 6-month monthly billed vs paid Purchase Invoice totals in company base currency."""
+	default_currency = frappe.defaults.get_global_default("currency") or "INR"
+	if company and frappe.db.exists("Company", company):
+		default_currency = frappe.db.get_value("Company", company, "default_currency") or default_currency
+
+	today = getdate(nowdate())
+	month_names = []
+	month_starts = []
+	for i in range(5, -1, -1):
+		m_date = add_months(today, -i)
+		month_names.append(m_date.strftime("%b"))
+		month_starts.append(m_date.replace(day=1))
+
+	has_pi = frappe.db.exists("DocType", "Purchase Invoice")
+	has_perm = frappe.has_permission("Purchase Invoice", "read") if has_pi else False
+
+	if not has_pi or not has_perm:
+		return {
+			"labels": month_names,
+			"billed": [0.0] * 6,
+			"paid": [0.0] * 6,
+			"currency": default_currency,
+			"has_permission": False,
+			"has_data": False,
+		}
+
+	window_start = month_starts[0]
+	window_end = add_months(month_starts[-1], 1)
+	filters = {
+		"docstatus": 1,
+		"is_return": 0,
+		"posting_date": ["between", [str(window_start), str(add_days(window_end, -1))]],
+	}
+	if company:
+		filters["company"] = company
+
+	invoices = frappe.get_list(
+		"Purchase Invoice",
+		filters=filters,
+		fields=[
+			"name",
+			"posting_date",
+			"base_grand_total",
+			"grand_total",
+			"outstanding_amount",
+			"party_account_currency",
+			"conversion_rate",
+		],
+		limit_page_length=0,
+	)
+
+	billed_series = [0.0] * 6
+	paid_series = [0.0] * 6
+	for inv in invoices:
+		p_date = getdate(inv.posting_date)
+		for idx, start_date in enumerate(month_starts):
+			end_date = add_months(start_date, 1)
+			if start_date <= p_date < end_date:
+				billed_amt = flt(inv.base_grand_total)
+				outstanding_amt = flt(inv.outstanding_amount)
+				if inv.party_account_currency and inv.party_account_currency != default_currency:
+					outstanding_amt *= flt(inv.conversion_rate) or 1.0
+				paid_amt = max(billed_amt - outstanding_amt, 0.0)
+				billed_series[idx] += billed_amt
+				paid_series[idx] += paid_amt
+				break
+
+	billed_series = [round(v, 2) for v in billed_series]
+	paid_series = [round(v, 2) for v in paid_series]
+
+	return {
+		"labels": month_names,
+		"billed": billed_series,
+		"paid": paid_series,
+		"currency": default_currency,
+		"has_permission": True,
+		"has_data": bool(invoices) and (sum(billed_series) > 0 or sum(paid_series) > 0),
 	}
 
 

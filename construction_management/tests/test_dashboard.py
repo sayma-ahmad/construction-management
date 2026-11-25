@@ -1,6 +1,8 @@
 # Copyright (c) 2026, TechnoTribes and contributors
 # See license.txt
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, flt, nowdate
@@ -359,3 +361,161 @@ class TestDashboard(FrappeTestCase):
 			if "doctype" in item:
 				self.assertTrue(bool(item.get("docname")), "Activity with doctype must include docname")
 				self.assertTrue(frappe.db.exists(item["doctype"], item["docname"]))
+
+	def _create_isolated_company(self, currency="INR", country="India"):
+		suffix = frappe.generate_hash(length=4).upper()
+		company = frappe.get_doc(
+			{
+				"doctype": "Company",
+				"company_name": f"Dash Fin Co {suffix}",
+				"abbr": f"DF{suffix[:3]}",
+				"default_currency": currency,
+				"country": country,
+				"enable_perpetual_inventory": 0,
+			}
+		).insert(ignore_permissions=True)
+		return company
+
+	def _create_purchase_invoice(self, company_doc, supplier, item_code, rate, qty=1, paid=0.0, submit=True, cancel=False, is_return=False):
+		company = company_doc.name
+		credit_to = company_doc.default_payable_account or frappe.db.get_value(
+			"Account", {"company": company, "account_type": "Payable", "is_group": 0}, "name"
+		)
+		expense_account = company_doc.default_expense_account or frappe.db.get_value(
+			"Account", {"company": company, "root_type": "Expense", "is_group": 0}, "name"
+		)
+		cost_center = company_doc.cost_center or frappe.db.get_value(
+			"Cost Center", {"company": company, "is_group": 0}, "name"
+		)
+		cash_account = company_doc.default_cash_account or frappe.db.get_value(
+			"Account", {"company": company, "account_type": "Cash", "is_group": 0}, "name"
+		)
+
+		doc_dict = {
+			"doctype": "Purchase Invoice",
+			"company": company,
+			"supplier": supplier,
+			"posting_date": nowdate(),
+			"set_posting_time": 1,
+			"credit_to": credit_to,
+			"update_stock": 0,
+			"is_return": 1 if is_return else 0,
+			"items": [
+				{
+					"item_code": item_code,
+					"qty": -qty if is_return else qty,
+					"rate": rate,
+					"expense_account": expense_account,
+					"cost_center": cost_center,
+				}
+			],
+		}
+		if paid > 0 and not is_return:
+			doc_dict.update({"is_paid": 1, "cash_bank_account": cash_account, "paid_amount": paid})
+
+		pi = frappe.get_doc(doc_dict).insert(ignore_permissions=True)
+		if submit:
+			pi.submit()
+		if cancel:
+			pi.cancel()
+		return pi
+
+	def test_11_expense_flow_six_month_labels_and_empty_state(self):
+		"""Expense Flow returns 6 monthly labels and clean empty state when no invoices exist."""
+		company_doc = self._create_isolated_company(currency="INR")
+		data = dashboard.get_dashboard_data(company=company_doc.name)
+		ef = data["expense_flow"]
+
+		self.assertEqual(len(ef["labels"]), 6)
+		self.assertEqual(ef["billed"], [0.0] * 6)
+		self.assertEqual(ef["paid"], [0.0] * 6)
+		self.assertEqual(ef["currency"], "INR")
+		self.assertTrue(ef["has_permission"])
+		self.assertFalse(ef["has_data"])
+
+	def test_12_expense_flow_billed_paid_exclusions_and_company_filter(self):
+		"""Expense Flow aggregates submitted PIs, tracks paid amounts, excludes draft/cancel/return, and scopes by company."""
+		company_a = self._create_isolated_company(currency="INR")
+		company_b = self._create_isolated_company(currency="INR")
+		supplier = self._get_or_create_supplier()
+		item_code = frappe.db.get_value("Item", {"is_stock_item": 1, "disabled": 0}, "name")
+
+		# 1. Submitted unpaid invoice (1000) -> billed += 1000, paid += 0
+		self._create_purchase_invoice(company_a, supplier, item_code, rate=1000, paid=0.0, submit=True)
+		# 2. Submitted partially/fully paid invoice (600, paid 400) -> billed += 600, paid += 400
+		self._create_purchase_invoice(company_a, supplier, item_code, rate=600, paid=400.0, submit=True)
+		# 3. Draft invoice (500) -> excluded
+		self._create_purchase_invoice(company_a, supplier, item_code, rate=500, submit=False)
+		# 4. Cancelled invoice (700) -> excluded
+		self._create_purchase_invoice(company_a, supplier, item_code, rate=700, submit=True, cancel=True)
+		# 5. Return invoice (-200) -> excluded
+		self._create_purchase_invoice(company_a, supplier, item_code, rate=200, submit=True, is_return=True)
+		# 6. Company B invoice (900) -> excluded from Company A
+		self._create_purchase_invoice(company_b, supplier, item_code, rate=900, paid=900.0, submit=True)
+
+		data_a = dashboard.get_dashboard_data(company=company_a.name)
+		ef_a = data_a["expense_flow"]
+		self.assertTrue(ef_a["has_permission"])
+		self.assertTrue(ef_a["has_data"])
+		self.assertEqual(len(ef_a["labels"]), 6)
+		self.assertAlmostEqual(sum(ef_a["billed"]), 1600.0, places=2)
+		self.assertAlmostEqual(sum(ef_a["paid"]), 400.0, places=2)
+		self.assertAlmostEqual(ef_a["billed"][-1], 1600.0, places=2)
+		self.assertAlmostEqual(ef_a["paid"][-1], 400.0, places=2)
+
+		data_b = dashboard.get_dashboard_data(company=company_b.name)
+		ef_b = data_b["expense_flow"]
+		self.assertAlmostEqual(sum(ef_b["billed"]), 900.0, places=2)
+		self.assertAlmostEqual(sum(ef_b["paid"]), 900.0, places=2)
+
+	def test_13_expense_flow_and_payables_permission_isolation(self):
+		"""Projects User without Purchase Invoice read permission receives zeroed payables and restricted Expense Flow."""
+		company_a = self._create_isolated_company(currency="INR")
+		supplier = self._get_or_create_supplier()
+		item_code = frappe.db.get_value("Item", {"is_stock_item": 1, "disabled": 0}, "name")
+		self._create_purchase_invoice(company_a, supplier, item_code, rate=1200, paid=200.0, submit=True)
+
+		user_email = f"proj_fin_{frappe.generate_hash(length=6)}@example.com"
+		frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": user_email,
+				"first_name": "Project",
+				"last_name": "Viewer",
+				"send_welcome_email": 0,
+				"roles": [{"role": "Projects User"}],
+			}
+		).insert(ignore_permissions=True)
+
+		frappe.set_user(user_email)
+		data = dashboard.get_dashboard_data(company=company_a.name)
+
+		ef = data["expense_flow"]
+		self.assertFalse(ef["has_permission"])
+		self.assertFalse(ef["has_data"])
+		self.assertEqual(ef["billed"], [0.0] * 6)
+		self.assertEqual(ef["paid"], [0.0] * 6)
+
+		payables_kpi = next(k for k in data["kpis"] if k["label"] == "Total Payables")
+		self.assertFalse(payables_kpi["has_permission"])
+		self.assertEqual(payables_kpi["value"], 0.0)
+		self.assertEqual(data["metrics"]["financial"]["total_expenses"], 0.0)
+
+	def test_14_expense_flow_missing_purchase_invoice_doctype(self):
+		"""Missing Purchase Invoice DocType is handled safely without raising."""
+		company_a = self._create_isolated_company(currency="INR")
+		orig_exists = frappe.db.exists
+
+		def fake_exists(dt, dn=None, *args, **kwargs):
+			if dt == "DocType" and dn == "Purchase Invoice":
+				return False
+			return orig_exists(dt, dn, *args, **kwargs)
+
+		with patch.object(frappe.db, "exists", side_effect=fake_exists):
+			data = dashboard.get_dashboard_data(company=company_a.name)
+
+		ef = data["expense_flow"]
+		self.assertFalse(ef["has_permission"])
+		self.assertFalse(ef["has_data"])
+		self.assertEqual(ef["billed"], [0.0] * 6)
+		self.assertEqual(ef["paid"], [0.0] * 6)

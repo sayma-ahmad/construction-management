@@ -72,11 +72,16 @@ class ProjectList {
 	}
 
 	refresh_location_options() {
-		const current = this.location.get_value();
-		const locations = [...new Set(this.projects.map((p) => p.location).filter(Boolean))].sort();
+		const current = (this.location.get_value() || "").trim();
+		const locations = [
+			...new Set(this.projects.map((p) => (p.location || "").trim()).filter(Boolean)),
+		].sort();
 		this.location.df.options = ["", ...locations];
 		this.location.refresh();
 		this.location.set_input(locations.includes(current) ? current : "");
+		if (this.location.$input) {
+			this.location.$input.off("change.cm_loc").on("change.cm_loc", () => this.render());
+		}
 	}
 
 	make_layout() {
@@ -123,14 +128,21 @@ class ProjectList {
 
 	get_filtered() {
 		const search = (this.search.get_value() || "").trim().toLowerCase();
-		const status = this.status.get_value();
-		const location = this.location.get_value();
+		const status = (this.status.get_value() || "").trim();
+		const location = (this.location.get_value() || "").trim();
 
 		return this.projects.filter((p) => {
+			const projectLocation = (p.location || "").trim();
 			const matches_search =
 				!search ||
-				[p.name, p.code, p.client, p.location].some((value) => (value || "").toLowerCase().includes(search));
-			return matches_search && (!status || p.status === status) && (!location || p.location === location);
+				[p.name, p.code, p.client, projectLocation].some((value) =>
+					(value || "").toLowerCase().includes(search)
+				);
+			return (
+				matches_search &&
+				(!status || p.status === status) &&
+				(!location || projectLocation === location)
+			);
 		});
 	}
 

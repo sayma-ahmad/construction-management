@@ -430,3 +430,285 @@ class TestDailyProgressReport(FrappeTestCase):
 		unmapped_res = get_project_dprs(project_name="Nonexistent Sample Project XYZ", project_code="PRJ-999")
 		self.assertIsNone(unmapped_res["mapped_project"])
 		self.assertEqual(unmapped_res["dprs"], [])
+
+	def test_tc13_submit_dpr_and_submitted_edit_lock(self):
+		"""TC-13: Submitting a Draft DPR sets docstatus=1, review_status='Pending Review', and locks form edits."""
+		from frappe.desk.form.save import savedocs
+
+		project = self._create_project(frappe.generate_hash(length=6))
+		dpr = self._make_dpr(project.name)
+		dpr.insert()
+		self.assertEqual(dpr.docstatus, 0)
+		self.assertEqual(dpr.review_status, "Draft")
+
+		dpr.save()
+		dpr.submit()
+		dpr.reload()
+
+		self.assertEqual(dpr.docstatus, 1)
+		self.assertEqual(dpr.review_status, "Pending Review")
+
+		# Normal form "Save" transition on a submitted DPR is blocked
+		with self.assertRaises(frappe.DocstatusTransitionError):
+			savedocs(dpr.as_json(), "Save")
+
+		# Modifying submitted content fields directly after submit is blocked
+		dpr.reload()
+		dpr.work_completed = "Edited after submission"
+		with self.assertRaises(frappe.UpdateAfterSubmitError):
+			dpr.save()
+
+		dpr.reload()
+		self.assertEqual(
+			dpr.work_completed,
+			"Completed foundation excavation and blinding concrete.",
+		)
+
+	def test_tc14_approve_dpr_with_and_without_remarks(self):
+		"""TC-14: Approve action sets review_status, reviewed_by, reviewed_on, and optional remarks."""
+		project = self._create_project(frappe.generate_hash(length=6))
+		manager = self._create_user_with_role("Projects Manager")
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		dpr_with_remarks = self._make_dpr(project.name)
+		dpr_with_remarks.insert()
+		dpr_with_remarks.submit()
+
+		dpr_no_remarks = self._make_dpr(project.name, shift="Night")
+		dpr_no_remarks.insert()
+		dpr_no_remarks.submit()
+
+		frappe.set_user(manager)
+		res_1 = approve_dpr(dpr_with_remarks.name, review_remarks="Good progress on foundation.")
+		dpr_with_remarks.reload()
+
+		self.assertEqual(res_1["review_status"], "Approved")
+		self.assertEqual(dpr_with_remarks.review_status, "Approved")
+		self.assertEqual(dpr_with_remarks.reviewed_by, manager)
+		self.assertIsNotNone(dpr_with_remarks.reviewed_on)
+		self.assertEqual(dpr_with_remarks.review_remarks, "Good progress on foundation.")
+
+		res_2 = approve_dpr(dpr_no_remarks.name)
+		dpr_no_remarks.reload()
+
+		self.assertEqual(res_2["review_status"], "Approved")
+		self.assertEqual(dpr_no_remarks.review_status, "Approved")
+		self.assertEqual(dpr_no_remarks.reviewed_by, manager)
+		self.assertIsNotNone(dpr_no_remarks.reviewed_on)
+		self.assertIsNone(dpr_no_remarks.review_remarks)
+
+	def test_tc15_request_revision_requires_remarks_and_saves_state(self):
+		"""TC-15: Request Revision rejects empty remarks with expected message and succeeds with remarks."""
+		project = self._create_project(frappe.generate_hash(length=6))
+		manager = self._create_user_with_role("Projects Manager")
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		dpr = self._make_dpr(project.name)
+		dpr.insert()
+		dpr.submit()
+
+		frappe.set_user(manager)
+		for empty_remarks in (None, "", "   "):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				request_dpr_revision(dpr.name, empty_remarks)
+			self.assertIn("Review remarks are required when requesting a revision.", str(ctx.exception))
+
+		dpr.reload()
+		self.assertEqual(dpr.review_status, "Pending Review")
+
+		res = request_dpr_revision(dpr.name, "Please attach concrete cube test report.")
+		dpr.reload()
+
+		self.assertEqual(res["review_status"], "Revision Requested")
+		self.assertEqual(dpr.review_status, "Revision Requested")
+		self.assertEqual(dpr.reviewed_by, manager)
+		self.assertIsNotNone(dpr.reviewed_on)
+		self.assertEqual(dpr.review_remarks, "Please attach concrete cube test report.")
+
+	def test_tc17_review_allowed_only_from_pending_review(self):
+		"""TC-17: Review actions work in Pending Review and are rejected once Approved or Revision Requested."""
+		project = self._create_project(frappe.generate_hash(length=6))
+		manager = self._create_user_with_role("Projects Manager")
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		dpr_approved = self._make_dpr(project.name)
+		dpr_approved.insert()
+		dpr_approved.submit()
+		self.assertEqual(dpr_approved.review_status, "Pending Review")
+
+		frappe.set_user(manager)
+		approve_dpr(dpr_approved.name, "Initial approval")
+		dpr_approved.reload()
+		orig_reviewed_on = dpr_approved.reviewed_on
+
+		with self.assertRaises(frappe.ValidationError) as ctx_app:
+			approve_dpr(dpr_approved.name, "Second approval")
+		self.assertIn("cannot be reviewed because its status is Approved", str(ctx_app.exception))
+
+		with self.assertRaises(frappe.ValidationError) as ctx_rev:
+			request_dpr_revision(dpr_approved.name, "Cannot revise after approval")
+		self.assertIn("cannot be reviewed because its status is Approved", str(ctx_rev.exception))
+
+		dpr_approved.reload()
+		self.assertEqual(dpr_approved.review_status, "Approved")
+		self.assertEqual(dpr_approved.reviewed_by, manager)
+		self.assertEqual(dpr_approved.reviewed_on, orig_reviewed_on)
+		self.assertEqual(dpr_approved.review_remarks, "Initial approval")
+
+		# Also confirm Revision Requested cannot be reviewed again directly
+		frappe.set_user("Administrator")
+		dpr_rev = self._make_dpr(project.name, shift="Night")
+		dpr_rev.insert()
+		dpr_rev.submit()
+
+		frappe.set_user(manager)
+		request_dpr_revision(dpr_rev.name, "Missing photos")
+		with self.assertRaises(frappe.ValidationError) as ctx_reapprove:
+			approve_dpr(dpr_rev.name, "Approve without resubmission")
+		self.assertIn("cannot be reviewed because its status is Revision Requested", str(ctx_reapprove.exception))
+
+	def test_tc18_review_fields_cannot_be_edited_directly(self):
+		"""TC-18: Direct edits to review fields on submitted DPR are rejected, while workflow actions succeed."""
+		project = self._create_project(frappe.generate_hash(length=6))
+		manager = self._create_user_with_role("Projects Manager")
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		dpr = self._make_dpr(project.name)
+		dpr.insert()
+		dpr.submit()
+
+		# Direct edit to review_remarks must fail with expected message
+		dpr.review_remarks = "Direct remark edit"
+		with self.assertRaises(frappe.PermissionError) as ctx_remarks:
+			dpr.save()
+		self.assertIn(
+			"Use the Approve or Request Revision actions to update Review Remarks.",
+			str(ctx_remarks.exception),
+		)
+
+		# Direct edits to review_status, reviewed_by, reviewed_on are also blocked
+		for fieldname, bad_value in (
+			("review_status", "Approved"),
+			("reviewed_by", manager),
+			("reviewed_on", "2026-11-25 10:00:00"),
+		):
+			dpr.reload()
+			dpr.set(fieldname, bad_value)
+			with self.assertRaises(frappe.PermissionError):
+				dpr.save()
+
+		dpr.reload()
+		self.assertEqual(dpr.review_status, "Pending Review")
+		self.assertIsNone(dpr.reviewed_by)
+		self.assertIsNone(dpr.reviewed_on)
+		self.assertIsNone(dpr.review_remarks)
+
+		# Legitimate workflow action updates review fields cleanly
+		frappe.set_user(manager)
+		approve_dpr(dpr.name, review_remarks="Approved through review action.")
+		dpr.reload()
+		self.assertEqual(dpr.review_status, "Approved")
+		self.assertEqual(dpr.reviewed_by, manager)
+		self.assertIsNotNone(dpr.reviewed_on)
+		self.assertEqual(dpr.review_remarks, "Approved through review action.")
+
+	def test_tc21_projects_user_create_submit_but_cannot_cancel_or_delete(self):
+		"""TC-21: Projects User can create and submit DPRs but cannot cancel or delete them."""
+		project = self._create_project(frappe.generate_hash(length=6))
+		projects_user = self._create_user_with_role("Projects User")
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		frappe.set_user(projects_user)
+		dpr = self._make_dpr(project.name)
+		dpr.insert()
+		self.assertEqual(dpr.docstatus, 0)
+		self.assertEqual(dpr.review_status, "Draft")
+
+		# Draft cannot be deleted by Projects User (delete=0 in DocPerm)
+		self.assertFalse(frappe.has_permission("Daily Progress Report", "delete", doc=dpr))
+		with self.assertRaises(frappe.PermissionError):
+			dpr.delete()
+		with self.assertRaises(frappe.PermissionError):
+			frappe.delete_doc("Daily Progress Report", dpr.name)
+
+		# Projects User can submit their DPR
+		dpr.submit()
+		dpr.reload()
+		self.assertEqual(dpr.docstatus, 1)
+		self.assertEqual(dpr.review_status, "Pending Review")
+
+		# Projects User cannot cancel or delete submitted DPR
+		self.assertFalse(frappe.has_permission("Daily Progress Report", "cancel", doc=dpr))
+		with self.assertRaises(frappe.PermissionError):
+			dpr.cancel()
+		with self.assertRaises(frappe.PermissionError):
+			frappe.delete_doc("Daily Progress Report", dpr.name)
+
+	def test_tc25_user_without_create_permission_cannot_create_dpr(self):
+		"""TC-25: User without DPR create permission cannot create a DPR even via direct API."""
+		import frappe.client
+
+		project = self._create_project(frappe.generate_hash(length=6))
+		admin_dpr = self._make_dpr(project.name)
+		admin_dpr.insert()
+
+		# 1. Stock User has neither read nor create permission on DPR
+		stock_user = self._create_user_with_role("Stock User")
+		self.addCleanup(frappe.set_user, "Administrator")
+		frappe.set_user(stock_user)
+		self.assertFalse(frappe.has_permission("Daily Progress Report", "create"))
+		with self.assertRaises(frappe.PermissionError):
+			self._make_dpr(project.name).insert()
+		with self.assertRaises(frappe.PermissionError):
+			frappe.client.insert(
+				{
+					"doctype": "Daily Progress Report",
+					"project": project.name,
+					"report_date": nowdate(),
+					"work_completed": "Unauthorized direct insert",
+				}
+			)
+
+		# 2. User with read/list permission ONLY (create=0) can list DPRs but cannot create via direct API
+		frappe.set_user("Administrator")
+		read_only_role = "Manufacturing Manager"
+		custom_perm = frappe.get_doc(
+			{
+				"doctype": "Custom DocPerm",
+				"parent": "Daily Progress Report",
+				"parenttype": "DocType",
+				"parentfield": "permissions",
+				"role": read_only_role,
+				"read": 1,
+				"create": 0,
+				"write": 0,
+				"submit": 0,
+				"cancel": 0,
+				"delete": 0,
+			}
+		).insert(ignore_permissions=True)
+		frappe.clear_cache(doctype="Daily Progress Report")
+		read_only_user = self._create_user_with_role(read_only_role)
+
+		try:
+			frappe.set_user(read_only_user)
+			self.assertTrue(frappe.has_permission("Daily Progress Report", "read"))
+			self.assertFalse(frappe.has_permission("Daily Progress Report", "create"))
+			listed = get_dpr_list(filters={"project": project.name})
+			self.assertEqual(listed["total"], 1)
+
+			with self.assertRaises(frappe.PermissionError):
+				self._make_dpr(project.name).insert()
+			with self.assertRaises(frappe.PermissionError):
+				frappe.client.insert(
+					{
+						"doctype": "Daily Progress Report",
+						"project": project.name,
+						"report_date": nowdate(),
+						"work_completed": "Read-only user direct insert",
+					}
+				)
+		finally:
+			frappe.set_user("Administrator")
+			frappe.delete_doc("Custom DocPerm", custom_perm.name, ignore_permissions=True)
+			frappe.clear_cache(doctype="Daily Progress Report")

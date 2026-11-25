@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 
 from construction_management.construction_management.utils import resolve_erpnext_project
 
@@ -14,6 +15,11 @@ def get_project_phases(project_name=None, project_code=None):
 
 	A phase that is In Progress is shown as On Hold while its project is on hold.
 	"""
+	if frappe.db.exists("Page", "construction-phases") and not frappe.get_cached_doc(
+		"Page", "construction-phases"
+	).is_permitted():
+		frappe.throw(_("Not permitted to access Project Phases"), frappe.PermissionError)
+
 	filters = {}
 	mapped_project = None
 	if project_name or project_code:
