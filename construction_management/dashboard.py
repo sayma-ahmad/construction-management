@@ -120,6 +120,7 @@ def get_dashboard_data(company=None):
 		"projects": _get_project_progress_table(company),
 		"inventory": inventory_issues["chart"],
 		"activity": _get_recent_activity_feed(company),
+		"expense_flow": financial_summary.get("expense_flow"),
 	}
 
 
@@ -380,6 +381,16 @@ def _get_financial_summary(company=None):
 	if company and frappe.db.exists("Company", company):
 		default_currency = frappe.db.get_value("Company", company, "default_currency") or default_currency
 
+	today = getdate(nowdate())
+	month_names = []
+	month_ranges = []
+	for i in range(5, -1, -1):
+		m_start = add_months(today.replace(day=1), -i)
+		m_end = add_months(m_start, 1)
+		month_names.append(m_start.strftime("%b"))
+		month_ranges.append((m_start, m_end))
+
+	monthly_expenses = [0.0] * 6
 	total_payables = 0.0
 	unpaid_count = 0
 	total_expenses = 0.0
@@ -392,7 +403,7 @@ def _get_financial_summary(company=None):
 		invoices = frappe.get_list(
 			"Purchase Invoice",
 			filters=filters,
-			fields=["name", "base_outstanding_amount", "base_grand_total", "outstanding_amount"],
+			fields=["name", "base_outstanding_amount", "base_grand_total", "outstanding_amount", "posting_date"],
 			limit_page_length=0,
 		)
 		for inv in invoices:
@@ -400,13 +411,26 @@ def _get_financial_summary(company=None):
 			if base_out > 0:
 				total_payables += base_out
 				unpaid_count += 1
-			total_expenses += flt(inv.base_grand_total)
+			grand_total = flt(inv.base_grand_total)
+			total_expenses += grand_total
+
+			p_date = getdate(inv.posting_date) if inv.posting_date else None
+			if p_date:
+				for idx, (m_start, m_end) in enumerate(month_ranges):
+					if m_start <= p_date < m_end:
+						monthly_expenses[idx] += grand_total
+						break
 
 	return {
 		"total_payables": round(total_payables, 2),
 		"unpaid_invoices_count": unpaid_count,
 		"total_expenses": round(total_expenses, 2),
 		"currency": default_currency,
+		"expense_flow": {
+			"labels": month_names,
+			"values": [round(v, 2) for v in monthly_expenses],
+			"currency": default_currency,
+		},
 	}
 
 
