@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.utils import cint, flt, nowdate, nowtime
+from frappe.utils.nestedset import get_descendants_of
 
 from construction_management import materials
 from construction_management.demo_data import ITEM_RATES
@@ -174,18 +175,15 @@ def get_inventory_summary(company=None, warehouse=None, item_group=None, materia
 	# Build base item filters for active construction materials
 	item_filters = {"is_stock_item": 1, "disabled": 0}
 	if item_group:
-		item_filters["item_group"] = item_group
+		descendants = get_descendants_of("Item Group", item_group, ignore_permissions=True) or []
+		item_filters["item_group"] = ["in", descendants + [item_group]] if descendants else item_group
 	if material_type and frappe.db.has_column("Item", "cm_material_type"):
 		item_filters["cm_material_type"] = material_type
 
-	# Scope construction materials
+	# Scope construction materials recursively across all nested sub-groups
 	has_cm_category = frappe.db.exists("Item Group", materials.MATERIALS_ITEM_GROUP)
 	if has_cm_category and not item_group:
-		child_groups = frappe.get_all(
-			"Item Group",
-			filters={"parent_item_group": materials.MATERIALS_ITEM_GROUP},
-			pluck="name",
-		)
+		child_groups = get_descendants_of("Item Group", materials.MATERIALS_ITEM_GROUP, ignore_permissions=True) or []
 		if child_groups:
 			item_filters["item_group"] = ["in", child_groups + [materials.MATERIALS_ITEM_GROUP]]
 
@@ -367,7 +365,7 @@ def get_inventory_summary(company=None, warehouse=None, item_group=None, materia
 
 
 @frappe.whitelist()
-def get_warehouse_stock_breakdown(company=None, warehouse=None, item_code=None):
+def get_warehouse_stock_breakdown(company=None, warehouse=None, item_code=None, search=None):
 	"""Subtasks 2 & 3: Detailed per-warehouse material availability breakdown."""
 	_check_stock_read()
 	company = _resolve_company(company)
@@ -423,10 +421,21 @@ def get_warehouse_stock_breakdown(company=None, warehouse=None, item_code=None):
 		)
 		item_meta = {i.name: i for i in item_rows}
 
+	search_query = (search or "").lower().strip()
 	breakdown = []
 	for b in bins:
 		meta = item_meta.get(b.item_code, {})
 		wh_info = wh_map.get(b.warehouse, {})
+
+		item_name = meta.get("item_name") or b.item_code
+		wh_name = wh_info.get("warehouse_name", b.warehouse)
+		project_name = wh_info.get("cm_project") or ""
+		site_location = wh_info.get("cm_site_location") or ""
+		if search_query and not any(
+			search_query in (val or "").lower()
+			for val in (b.item_code, item_name, b.warehouse, wh_name, project_name, site_location)
+		):
+			continue
 
 		actual = flt(b.actual_qty)
 		reserved = flt(b.reserved_qty)
@@ -435,12 +444,12 @@ def get_warehouse_stock_breakdown(company=None, warehouse=None, item_code=None):
 		breakdown.append(
 			{
 				"warehouse": b.warehouse,
-				"warehouse_name": wh_info.get("warehouse_name", b.warehouse),
+				"warehouse_name": wh_name,
 				"is_site_warehouse": wh_info.get("cm_is_site_warehouse", 0),
-				"project": wh_info.get("cm_project") or "",
-				"site_location": wh_info.get("cm_site_location") or "",
+				"project": project_name,
+				"site_location": site_location,
 				"item_code": b.item_code,
-				"item_name": meta.get("item_name") or b.item_code,
+				"item_name": item_name,
 				"item_group": meta.get("item_group") or "",
 				"stock_uom": meta.get("stock_uom") or "",
 				"actual_qty": actual,
@@ -498,6 +507,70 @@ def get_warehouses(company=None):
 		fields.append("cm_project")
 
 	return frappe.get_list("Warehouse", filters=filters, fields=fields, order_by="warehouse_name asc", limit_page_length=0)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def warehouse_query(doctype, txt, searchfield, start, page_len, filters, as_dict=False):
+	"""Return non-group warehouses for the active company respecting Warehouse permissions."""
+	if frappe.session.user == "Guest" or not (
+		frappe.has_permission("Warehouse", "read") or frappe.has_permission("Warehouse", "select")
+	):
+		frappe.throw(_("Not permitted to search Warehouses"), frappe.PermissionError)
+
+	filters = filters or {}
+	company = _resolve_company(filters.get("company") if isinstance(filters, dict) else None)
+	list_filters = {"is_group": 0, "disabled": 0}
+	if company:
+		list_filters["company"] = company
+
+	or_filters = None
+	if txt:
+		or_filters = [
+			["Warehouse", "name", "like", f"%{txt}%"],
+			["Warehouse", "warehouse_name", "like", f"%{txt}%"],
+		]
+
+	return frappe.get_list(
+		"Warehouse",
+		filters=list_filters,
+		or_filters=or_filters,
+		fields=["name", "warehouse_name"],
+		order_by="warehouse_name asc, name asc",
+		start=cint(start),
+		page_length=cint(page_len) or 20,
+		as_list=not as_dict,
+	)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def material_item_query(doctype, txt, searchfield, start, page_len, filters, as_dict=False):
+	"""Return active stock items for material transfers respecting Item permissions."""
+	if frappe.session.user == "Guest" or not (
+		frappe.has_permission("Item", "read") or frappe.has_permission("Item", "select")
+	):
+		frappe.throw(_("Not permitted to search Items"), frappe.PermissionError)
+
+	list_filters = {"is_stock_item": 1, "disabled": 0}
+	or_filters = None
+	if txt:
+		or_filters = [
+			["Item", "name", "like", f"%{txt}%"],
+			["Item", "item_name", "like", f"%{txt}%"],
+			["Item", "item_group", "like", f"%{txt}%"],
+		]
+
+	return frappe.get_list(
+		"Item",
+		filters=list_filters,
+		or_filters=or_filters,
+		fields=["name", "item_name", "item_group"],
+		order_by="name asc",
+		start=cint(start),
+		page_length=cint(page_len) or 20,
+		as_list=not as_dict,
+	)
 
 
 @frappe.whitelist()
@@ -569,19 +642,25 @@ def create_stock_transfer(from_warehouse, to_warehouse, items, project=None, com
 
 		item_requested_totals[item_code] = item_requested_totals.get(item_code, 0.0) + qty
 
-	# Validate total requested quantity against stock in the source warehouse
+	# Validate total requested quantity against available stock (actual - reserved) in source warehouse
 	for item_code, total_qty in item_requested_totals.items():
-		actual_qty = flt(
-			frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": from_warehouse}, "actual_qty")
+		bin_row = frappe.db.get_value(
+			"Bin",
+			{"item_code": item_code, "warehouse": from_warehouse},
+			["actual_qty", "reserved_qty"],
+			as_dict=True,
 		)
-		if actual_qty < total_qty:
+		available_qty = (
+			max(flt(bin_row.actual_qty) - flt(bin_row.reserved_qty), 0.0) if bin_row else 0.0
+		)
+		if available_qty < total_qty:
 			frappe.throw(
 				_("Cannot transfer total {0} {1} of {2}. Available stock in {3} is only {4}.").format(
 					total_qty,
 					frappe.db.get_value("Item", item_code, "stock_uom"),
 					item_code,
 					from_warehouse,
-					actual_qty,
+					available_qty,
 				)
 			)
 
@@ -643,7 +722,7 @@ def create_stock_transfer(from_warehouse, to_warehouse, items, project=None, com
 
 
 @frappe.whitelist()
-def get_stock_transfers(company=None, project=None, limit=25):
+def get_stock_transfers(company=None, project=None, warehouse=None, status=None, search=None, limit=25):
 	"""Return list of recent stock transfers with their items and statuses."""
 	if frappe.session.user == "Guest":
 		frappe.throw(_("Authentication required"), frappe.PermissionError)
@@ -657,9 +736,21 @@ def get_stock_transfers(company=None, project=None, limit=25):
 	if project:
 		filters["project"] = project
 
+	status_map = {"draft": 0, "submitted": 1, "cancelled": 2}
+	if status and status.lower() in status_map:
+		filters["docstatus"] = status_map[status.lower()]
+
+	or_filters = None
+	if warehouse:
+		or_filters = [
+			["Stock Entry", "from_warehouse", "=", warehouse],
+			["Stock Entry", "to_warehouse", "=", warehouse],
+		]
+
 	entries = frappe.get_list(
 		"Stock Entry",
 		filters=filters,
+		or_filters=or_filters,
 		fields=[
 			"name",
 			"posting_date",
@@ -671,8 +762,19 @@ def get_stock_transfers(company=None, project=None, limit=25):
 			"docstatus",
 		],
 		order_by="posting_date desc, creation desc",
-		limit_page_length=min(cint(limit) or 25, 100),
+		limit_page_length=0 if search else min(cint(limit) or 25, 100),
 	)
+
+	if search:
+		search_query = search.lower().strip()
+		entries = [
+			e
+			for e in entries
+			if any(
+				search_query in (val or "").lower()
+				for val in (e.name, e.from_warehouse, e.to_warehouse, e.project)
+			)
+		][: min(cint(limit) or 25, 100)]
 
 	if not entries:
 		return []
