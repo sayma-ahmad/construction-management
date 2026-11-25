@@ -47,7 +47,13 @@ class ProjectDetails {
 		this.page = page;
 		this.ready = frappe.require(CM_PROJECT_DETAIL_ASSETS);
 		this.$wrapper = $(`<div class="cm-pd"></div>`).appendTo(page.main);
-		this.$wrapper.on("click", ".cm-pd-tab", (e) => this.set_tab($(e.currentTarget).attr("data-tab")));
+		this.$wrapper.on("click", ".cm-pd-tab", (e) => {
+			const tab = $(e.currentTarget).attr("data-tab");
+			if (this.project && this.project.code) {
+				frappe.set_route("construction-project-details", this.project.code, tab);
+			}
+			this.set_tab(tab);
+		});
 	}
 
 	show(code, tab) {
@@ -121,6 +127,8 @@ class ProjectDetails {
 		`);
 		this._dprs_loaded = false;
 		this._dprs_loading = false;
+		this._work_orders_loaded = false;
+		this._work_orders_loading = false;
 		this._work_orders_loaded = false;
 		this._work_orders_loading = false;
 		this._materials_loaded = false;
@@ -214,6 +222,7 @@ class ProjectDetails {
 		}
 		if (key === "work_orders" && this.project && !this._work_orders_loaded && !this._work_orders_loading) {
 			this.load_work_orders();
+		}
 		}
 		if (key === "materials" && this.project && !this._materials_loaded && !this._materials_loading) {
 			this.load_materials();
