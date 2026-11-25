@@ -15,3 +15,6 @@ construction_management/public/dist/
 *.swp
 Thumbs.db
 desktop.ini
+
+*.docx
+*.pptx 

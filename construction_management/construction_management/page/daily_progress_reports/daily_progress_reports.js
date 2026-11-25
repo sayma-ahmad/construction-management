@@ -10,7 +10,9 @@ frappe.pages["daily-progress-reports"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
-	page.set_primary_action(__("New DPR"), () => frappe.new_doc("Daily Progress Report"), "add");
+	if (frappe.model.can_create("Daily Progress Report")) {
+		page.set_primary_action(__("New DPR"), () => frappe.new_doc("Daily Progress Report"), "add");
+	}
 	page.set_secondary_action(__("Refresh"), () => wrapper.dpr_list?.fetch());
 
 	frappe.require(CM_DPR_PAGE_ASSETS, () => {
@@ -159,7 +161,7 @@ class DailyProgressReportList {
 
 	get_filters() {
 		return {
-			project: this.project.get_value() || "",
+			project: this.project.value || "",
 			from_date: this.from_date.get_value() || "",
 			to_date: this.to_date.get_value() || "",
 			review_status: this.review_status.get_value() || "",

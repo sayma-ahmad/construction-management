@@ -1,53 +1,41 @@
-// Sample tasks and the task table shared by the Project Tasks and Project Details pages.
-// Real tasks will be loaded from the Task DocType in a later story.
+// Task table, task dialogs and helpers shared by the Project Tasks and Project Details pages.
+// Tasks are ERPNext Task records loaded through construction_management...task.get_construction_tasks.
 frappe.provide("construction_management");
 
 construction_management.TASK_STATUSES = ["Open", "Working", "Pending Review", "Overdue", "Completed"];
 
 construction_management.TASK_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 
-construction_management.SAMPLE_TASKS = [
-	{ id: "TASK-0001", subject: "Tower A internal plastering", project: "PRJ-001", phase: "Finishing", assigned_to: "Ramesh Patil", priority: "High", status: "Working", start: "2026-10-01", due: "2026-11-30" },
-	{ id: "TASK-0002", subject: "Tower B plumbing first fix", project: "PRJ-001", phase: "MEP Works", assigned_to: "Suresh Kulkarni", priority: "Medium", status: "Completed", start: "2026-07-15", due: "2026-09-30" },
-	{ id: "TASK-0003", subject: "Basement waterproofing inspection", project: "PRJ-001", phase: "Structure", assigned_to: "Anil Mehta", priority: "Urgent", status: "Overdue", start: "2026-10-20", due: "2026-11-10" },
-	{ id: "TASK-0004", subject: "Lift installation - Tower A", project: "PRJ-001", phase: "MEP Works", assigned_to: "Deepak Joshi", priority: "High", status: "Pending Review", start: "2026-09-01", due: "2026-11-20" },
-	{ id: "TASK-0005", subject: "Apartment flooring - floors 1 to 8", project: "PRJ-001", phase: "Finishing", assigned_to: "Ramesh Patil", priority: "Medium", status: "Open", start: "2026-12-01", due: "2027-01-15" },
-	{ id: "TASK-0006", subject: "Slab casting - floor 14", project: "PRJ-002", phase: "Structure", assigned_to: "Imran Khan", priority: "High", status: "Working", start: "2026-11-01", due: "2026-11-25" },
-	{ id: "TASK-0007", subject: "Curtain wall shop drawings", project: "PRJ-002", phase: "Structure", assigned_to: "Priya Nair", priority: "Medium", status: "Pending Review", start: "2026-10-10", due: "2026-11-18" },
-	{ id: "TASK-0008", subject: "HVAC ducting - floors 1 to 6", project: "PRJ-002", phase: "MEP Works", assigned_to: "Deepak Joshi", priority: "Medium", status: "Open", start: "2026-12-05", due: "2027-02-10" },
-	{ id: "TASK-0009", subject: "Tower crane safety audit", project: "PRJ-002", phase: "Structure", assigned_to: "Imran Khan", priority: "Urgent", status: "Overdue", start: "2026-10-25", due: "2026-11-05" },
-	{ id: "TASK-0010", subject: "Revised building permit submission", project: "PRJ-003", phase: "Foundation", assigned_to: "Rahul Verma", priority: "Urgent", status: "Pending Review", start: "2026-09-15", due: "2026-11-30" },
-	{ id: "TASK-0011", subject: "Villa 1 to 10 foundation works", project: "PRJ-003", phase: "Foundation", assigned_to: "Manoj Reddy", priority: "High", status: "Open", start: "2026-08-01", due: "2026-12-15" },
-	{ id: "TASK-0012", subject: "Site boundary wall", project: "PRJ-003", phase: "Site Preparation", assigned_to: "Manoj Reddy", priority: "Low", status: "Completed", start: "2025-07-01", due: "2025-09-15" },
-	{ id: "TASK-0013", subject: "Food court fit-out", project: "PRJ-004", phase: "Finishing", assigned_to: "Sneha Kapoor", priority: "High", status: "Working", start: "2026-09-01", due: "2026-11-28" },
-	{ id: "TASK-0014", subject: "HVAC commissioning", project: "PRJ-004", phase: "MEP Works", assigned_to: "Deepak Joshi", priority: "High", status: "Completed", start: "2026-08-01", due: "2026-10-31" },
-	{ id: "TASK-0015", subject: "Facade cleaning and snag list", project: "PRJ-004", phase: "Handover", assigned_to: "Arjun Singh", priority: "Medium", status: "Open", start: "2026-11-20", due: "2026-12-05" },
-	{ id: "TASK-0016", subject: "Fire NOC inspection", project: "PRJ-004", phase: "Handover", assigned_to: "Sneha Kapoor", priority: "Urgent", status: "Pending Review", start: "2026-11-01", due: "2026-11-25" },
-	{ id: "TASK-0017", subject: "Pier 3 concrete repair", project: "PRJ-005", phase: "Structure", assigned_to: "Karthik Iyer", priority: "High", status: "Working", start: "2026-10-01", due: "2026-12-20" },
-	{ id: "TASK-0018", subject: "Bearing replacement - span 2", project: "PRJ-005", phase: "Structure", assigned_to: "Vijay Kumar", priority: "Urgent", status: "Overdue", start: "2026-09-15", due: "2026-11-08" },
-	{ id: "TASK-0019", subject: "Traffic diversion plan", project: "PRJ-005", phase: "Site Preparation", assigned_to: "Karthik Iyer", priority: "Medium", status: "Completed", start: "2026-03-01", due: "2026-03-31" },
-	{ id: "TASK-0020", subject: "Deck resurfacing material approval", project: "PRJ-005", phase: "Finishing", assigned_to: "Vijay Kumar", priority: "Low", status: "Open", start: "2026-12-01", due: "2027-01-10" },
-	{ id: "TASK-0021", subject: "Auditorium acoustic panels", project: "PRJ-006", phase: "Finishing", assigned_to: "Ramesh Patil", priority: "Medium", status: "Completed", start: "2026-03-01", due: "2026-04-30" },
-	{ id: "TASK-0022", subject: "Lab equipment handover", project: "PRJ-006", phase: "Handover", assigned_to: "Anil Mehta", priority: "High", status: "Completed", start: "2026-05-15", due: "2026-06-25" },
-	{ id: "TASK-0023", subject: "Final occupancy certificate", project: "PRJ-006", phase: "Handover", assigned_to: "Anil Mehta", priority: "High", status: "Completed", start: "2026-06-01", due: "2026-06-30" },
-	{ id: "TASK-0024", subject: "Soil investigation report", project: "PRJ-007", phase: "Site Preparation", assigned_to: "Fatima Shaikh", priority: "High", status: "Open", start: "2027-01-15", due: "2027-02-05" },
-	{ id: "TASK-0025", subject: "Architectural drawing approval", project: "PRJ-007", phase: "Site Preparation", assigned_to: "Fatima Shaikh", priority: "Medium", status: "Pending Review", start: "2026-11-01", due: "2026-12-15" },
-	{ id: "TASK-0026", subject: "Contractor tender evaluation", project: "PRJ-007", phase: "Site Preparation", assigned_to: "Arjun Singh", priority: "Medium", status: "Open", start: "2026-12-01", due: "2027-01-10" },
-	{ id: "TASK-0027", subject: "Land survey and site marking", project: "PRJ-008", phase: "Site Preparation", assigned_to: "Manoj Reddy", priority: "Medium", status: "Open", start: "2027-03-01", due: "2027-03-20" },
-	{ id: "TASK-0028", subject: "Environmental clearance application", project: "PRJ-008", phase: "Site Preparation", assigned_to: "Rahul Verma", priority: "High", status: "Working", start: "2026-10-15", due: "2027-01-31" },
-	{ id: "TASK-0029", subject: "Toll booth electrical works", project: "PRJ-009", phase: "MEP Works", assigned_to: "Sanjay Patel", priority: "Medium", status: "Completed", start: "2025-12-01", due: "2026-02-28" },
-	{ id: "TASK-0030", subject: "Control room systems testing", project: "PRJ-009", phase: "Handover", assigned_to: "Vikram Desai", priority: "High", status: "Completed", start: "2026-04-01", due: "2026-05-10" },
-	{ id: "TASK-0031", subject: "Coastal zone clearance renewal", project: "PRJ-010", phase: "Site Preparation", assigned_to: "Priya Nair", priority: "Urgent", status: "Overdue", start: "2026-08-01", due: "2026-10-31" },
-	{ id: "TASK-0032", subject: "Excavation - main block", project: "PRJ-010", phase: "Foundation", assigned_to: "Imran Khan", priority: "Medium", status: "Open", start: "2026-05-01", due: "2026-12-31" },
-	{ id: "TASK-0033", subject: "Site office setup", project: "PRJ-010", phase: "Site Preparation", assigned_to: "Imran Khan", priority: "Low", status: "Completed", start: "2026-02-01", due: "2026-02-28" },
-];
+construction_management.TASKS_METHOD = "construction_management.construction_management.task.get_construction_tasks";
 
-construction_management.get_project = function (code) {
-	return construction_management.SAMPLE_PROJECTS.find((p) => p.code === code);
+construction_management.load_tasks = function (args = {}) {
+	return frappe
+		.call({ method: construction_management.TASKS_METHOD, args })
+		.then((r) => {
+			const data = r.message || {};
+			return {
+				mapped_project: data.mapped_project,
+				tasks: (data.tasks || []).map((t) => ({
+					id: t.name,
+					subject: t.subject || "",
+					project: t.project || "",
+					project_name: t.project_name || "",
+					project_code: t.project_code || "",
+					phase: t.phase || "",
+					assigned_to: t.assigned_to || "",
+					priority: t.priority || "",
+					status: t.status || "Open",
+					start: t.exp_start_date || "",
+					due: t.exp_end_date || "",
+					progress: t.progress || 0,
+				})),
+			};
+		});
 };
 
 // Priority is shown as signal bars: one filled bar per level.
 construction_management.priority_badge = function (priority) {
+	if (!priority) return "";
 	const level = construction_management.TASK_PRIORITIES.indexOf(priority) + 1;
 	const bars = construction_management.TASK_PRIORITIES.map(
 		(_, index) => `<span class="cm-priority-bar${index < level ? " filled" : ""}"></span>`
@@ -56,47 +44,69 @@ construction_management.priority_badge = function (priority) {
 	return `<span class="cm-priority cm-priority-${css_class}"><span class="cm-priority-bars">${bars}</span>${__(priority)}</span>`;
 };
 
-construction_management.show_task_create_placeholder = function () {
-	frappe.msgprint({
-		title: __("New Task"),
-		message: __("Task creation will be available in a later release."),
-		indicator: "blue",
-	});
+construction_management.task_form_fields = function (values = {}) {
+	return [
+		{ fieldname: "subject", fieldtype: "Data", label: __("Subject"), reqd: 1, default: values.subject },
+		{ fieldname: "project", fieldtype: "Link", options: "Project", label: __("Project"), default: values.project },
+		{
+			fieldname: "status",
+			fieldtype: "Select",
+			label: __("Status"),
+			options: construction_management.TASK_STATUSES,
+			default: values.status || "Open",
+		},
+		{
+			fieldname: "priority",
+			fieldtype: "Select",
+			label: __("Priority"),
+			options: ["", ...construction_management.TASK_PRIORITIES],
+			default: values.priority || "Medium",
+		},
+		{ fieldtype: "Column Break" },
+		{ fieldname: "exp_start_date", fieldtype: "Date", label: __("Start Date"), default: values.start },
+		{ fieldname: "exp_end_date", fieldtype: "Date", label: __("Due Date"), default: values.due },
+		{ fieldname: "progress", fieldtype: "Percent", label: __("% Progress"), default: values.progress || 0 },
+	];
 };
 
-construction_management.show_task_details = function (task) {
-	const esc = frappe.utils.escape_html;
-	const project = construction_management.get_project(task.project);
-	const route = frappe.get_route();
-	const on_project_page = route[0] === "construction-project-details" && route[1] === task.project;
-
-	const fields = [
-		[__("Task ID"), esc(task.id)],
-		[__("Project"), esc(project ? project.name : task.project)],
-		[__("Phase"), esc(__(task.phase))],
-		[__("Assigned To"), esc(task.assigned_to)],
-		[__("Status"), construction_management.status_pill(task.status)],
-		[__("Priority"), construction_management.priority_badge(task.priority)],
-		[__("Start Date"), frappe.datetime.str_to_user(task.start)],
-		[__("Due Date"), frappe.datetime.str_to_user(task.due)],
-	];
-
+construction_management.show_task_create_dialog = function ({ project, on_saved } = {}) {
 	const dialog = new frappe.ui.Dialog({
-		title: task.subject,
+		title: __("New Task"),
 		size: "large",
-		fields: [{ fieldtype: "HTML", fieldname: "details" }],
+		fields: construction_management.task_form_fields({ project }),
+		primary_action_label: __("Create"),
+		primary_action: (values) => {
+			frappe.db.insert({ doctype: "Task", ...values }).then((doc) => {
+				dialog.hide();
+				frappe.show_alert({ message: __("Task {0} created", [doc.name]), indicator: "green" });
+				on_saved && on_saved(doc);
+			});
+		},
 	});
+	dialog.show();
+};
 
-	if (!on_project_page) {
-		dialog.set_primary_action(__("Open Project"), () => {
-			dialog.hide();
-			frappe.set_route("construction-project-details", task.project);
-		});
+construction_management.show_task_details = function (task, { on_saved } = {}) {
+	const esc = frappe.utils.escape_html;
+	const route = frappe.get_route();
+	const on_project_page = route[0] === "construction-project-details" && !!task.project_code && route[1] === task.project_code;
+	const can_edit = frappe.model.can_write("Task");
+
+	const summary = [
+		[__("Task ID"), esc(task.id)],
+		[__("Phase"), esc(task.phase || "-")],
+		[__("Assigned To"), esc(task.assigned_to || __("Unassigned"))],
+	];
+	const fields = [{ fieldtype: "HTML", fieldname: "summary" }, { fieldtype: "Section Break" }];
+	fields.push(...construction_management.task_form_fields(task));
+	if (!can_edit) {
+		fields.forEach((df) => df.fieldname && df.fieldname !== "summary" && (df.read_only = 1));
 	}
 
-	dialog.fields_dict.details.$wrapper.html(`
+	const dialog = new frappe.ui.Dialog({ title: task.subject, size: "large", fields });
+	dialog.fields_dict.summary.$wrapper.html(`
 		<div class="cm-task-detail-grid">
-			${fields
+			${summary
 				.map(
 					([label, value]) => `
 				<div>
@@ -106,47 +116,70 @@ construction_management.show_task_details = function (task) {
 				)
 				.join("")}
 		</div>
-		<div class="cm-task-detail-note">${__("Task editing and updates will be available in a later release.")}</div>
 	`);
+
+	if (can_edit) {
+		dialog.set_primary_action(__("Save"), (values) => {
+			frappe
+				.call({
+					method: "frappe.client.set_value",
+					args: { doctype: "Task", name: task.id, fieldname: values },
+				})
+				.then(() => {
+					dialog.hide();
+					frappe.show_alert({ message: __("Task {0} updated", [task.id]), indicator: "green" });
+					on_saved && on_saved();
+				});
+		});
+	}
+
+	if (!on_project_page) {
+		dialog.add_custom_action(__("Open Project"), () => {
+			dialog.hide();
+			construction_management.open_task_project(task);
+		});
+	}
 	dialog.show();
 };
 
+construction_management.open_task_project = function (task) {
+	if (task.project) {
+		frappe.set_route("construction-project-details", task.project_code || task.project);
+	}
+};
+
 // Table of tasks with search and filters. Used on the Project Tasks page (all projects)
-// and inside the Tasks tab of a project (show_project: false, pre-filtered tasks).
+// and inside the Tasks tab of a project (show_project: false, that project's tasks).
 construction_management.TaskList = class TaskList {
-	constructor({ parent, tasks, show_project = true, show_create = false }) {
-		this.tasks = tasks;
+	constructor({ parent, loader, show_project = true, show_create = false, default_project = null }) {
+		this.loader = loader;
+		this.tasks = [];
 		this.show_project = show_project;
-		this.show_create = show_create;
+		this.show_create = show_create && frappe.model.can_create("Task");
+		this.default_project = default_project;
 		this.make_layout(parent);
-		this.render();
+		this.ready = this.reload();
+	}
+
+	reload() {
+		this.show_message(__("Loading tasks..."));
+		return this.loader().then((tasks) => {
+			this.tasks = tasks;
+			this.refresh_filter_options();
+			this.render();
+		});
 	}
 
 	make_layout(parent) {
-		const options = (values, placeholder) =>
-			`<option value="">${placeholder}</option>` +
-			values.map((v) => `<option value="${frappe.utils.escape_html(v)}">${__(v)}</option>`).join("");
-
-		const assignees = [...new Set(this.tasks.map((t) => t.assigned_to))].sort();
-		const project_codes = [...new Set(this.tasks.map((t) => t.project))].sort();
-		const project_options =
-			`<option value="">${__("All Projects")}</option>` +
-			project_codes
-				.map((code) => {
-					const project = construction_management.get_project(code);
-					return `<option value="${code}">${frappe.utils.escape_html(project ? project.name : code)}</option>`;
-				})
-				.join("");
-
 		this.$wrapper = $(`
 			<div class="cm-tasks-card">
 				<div class="cm-tasks-filters">
 					<input type="search" class="form-control input-sm cm-tasks-search"
 						placeholder="${__("Search task name, ID or assignee")}">
-					${this.show_project ? `<select class="form-control input-sm" data-filter="project">${project_options}</select>` : ""}
-					<select class="form-control input-sm" data-filter="status">${options(construction_management.TASK_STATUSES, __("All Statuses"))}</select>
-					<select class="form-control input-sm" data-filter="priority">${options(construction_management.TASK_PRIORITIES, __("All Priorities"))}</select>
-					<select class="form-control input-sm" data-filter="assigned_to">${options(assignees, __("All Assignees"))}</select>
+					${this.show_project ? `<select class="form-control input-sm" data-filter="project"></select>` : ""}
+					<select class="form-control input-sm" data-filter="status"></select>
+					<select class="form-control input-sm" data-filter="priority"></select>
+					<select class="form-control input-sm" data-filter="assigned_to"></select>
 				</div>
 				<div class="cm-tasks-toolbar">
 					<span class="cm-tasks-count"></span>
@@ -185,26 +218,59 @@ construction_management.TaskList = class TaskList {
 			this.$wrapper.find("select[data-filter]").val("");
 			this.render();
 		});
-		this.$wrapper.find(".cm-tasks-create").on("click", construction_management.show_task_create_placeholder);
+		this.$wrapper.find(".cm-tasks-create").on("click", () => this.create_task());
 
 		this.$wrapper.on("click", ".cm-tasks-project-link", (e) => {
 			e.stopPropagation();
-			frappe.set_route("construction-project-details", $(e.currentTarget).attr("data-project"));
+			const task = this.tasks.find((t) => t.id === $(e.currentTarget).attr("data-task"));
+			construction_management.open_task_project(task);
 		});
 		this.$wrapper.on("click", "tbody tr[data-task]", (e) => {
 			const task = this.tasks.find((t) => t.id === $(e.currentTarget).attr("data-task"));
-			construction_management.show_task_details(task);
+			construction_management.show_task_details(task, { on_saved: () => this.reload() });
 		});
+	}
+
+	create_task() {
+		const project = this.default_project || this.get_filter("project") || null;
+		construction_management.show_task_create_dialog({ project, on_saved: () => this.reload() });
+	}
+
+	refresh_filter_options() {
+		const esc = frappe.utils.escape_html;
+		const options = (values, placeholder) =>
+			`<option value="">${placeholder}</option>` +
+			values.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join("");
+		const set = (name, html) => {
+			const $select = this.$wrapper.find(`select[data-filter="${name}"]`);
+			const current = $select.val();
+			$select.html(html);
+			if (current && $select.find(`option[value="${current}"]`).length) $select.val(current);
+		};
+
+		const projects = new Map(this.tasks.filter((t) => t.project).map((t) => [t.project, t.project_name]));
+		const assignees = [...new Set(this.tasks.map((t) => t.assigned_to).filter(Boolean))].sort();
+		set("project", options([...projects].sort((a, b) => a[1].localeCompare(b[1])), __("All Projects")));
+		set("status", options(construction_management.TASK_STATUSES.map((s) => [s, __(s)]), __("All Statuses")));
+		set("priority", options(construction_management.TASK_PRIORITIES.map((p) => [p, __(p)]), __("All Priorities")));
+		set("assigned_to", options(assignees.map((a) => [a, a]), __("All Assignees")));
 	}
 
 	get_filter(name) {
 		return this.$wrapper.find(`select[data-filter="${name}"]`).val() || "";
 	}
 
-	set_project(code) {
-		const $project = this.$wrapper.find('select[data-filter="project"]');
-		$project.val($project.find(`option[value="${code}"]`).length ? code : "");
-		this.render();
+	// Accepts an ERPNext Project name or a Project Code (for example PRJ-001).
+	set_project(value) {
+		this.ready.then(() => {
+			const $project = this.$wrapper.find('select[data-filter="project"]');
+			let match = value && $project.find(`option[value="${value}"]`).length ? value : "";
+			if (!match && value) {
+				match = this.tasks.find((t) => t.project_code === value)?.project || "";
+			}
+			$project.val(match);
+			this.render();
+		});
 	}
 
 	get_filtered() {
@@ -216,31 +282,34 @@ construction_management.TaskList = class TaskList {
 		return this.tasks.filter((task) => {
 			const matches_search =
 				!search ||
-				[task.subject, task.id, task.assigned_to].some((value) => value.toLowerCase().includes(search));
+				[task.subject, task.id, task.assigned_to].some((value) => (value || "").toLowerCase().includes(search));
 			return matches_search && filters.every(([name, value]) => task[name] === value);
 		});
 	}
 
+	show_message(message) {
+		const columns = this.show_project ? 9 : 8;
+		this.$wrapper.find("tbody").html(`<tr><td colspan="${columns}" class="cm-tasks-empty">${message}</td></tr>`);
+	}
+
 	render() {
 		const tasks = this.get_filtered();
-		const columns = this.show_project ? 9 : 8;
 
 		this.$wrapper
 			.find(".cm-tasks-count")
 			.text(__("Showing {0} of {1} tasks", [tasks.length, this.tasks.length]));
 
-		const rows = tasks.length
-			? tasks.map((task) => this.task_row(task)).join("")
-			: `<tr><td colspan="${columns}" class="cm-tasks-empty">${__("No tasks match the selected filters.")}</td></tr>`;
-
-		this.$wrapper.find("tbody").html(rows);
+		if (!tasks.length) {
+			this.show_message(__("No tasks match the selected filters."));
+			return;
+		}
+		this.$wrapper.find("tbody").html(tasks.map((task) => this.task_row(task)).join(""));
 	}
 
 	task_row(task) {
 		const esc = frappe.utils.escape_html;
-		const project = construction_management.get_project(task.project);
 		const project_cell = this.show_project
-			? `<td><a class="cm-tasks-project-link" data-project="${esc(task.project)}">${esc(project ? project.name : task.project)}</a></td>`
+			? `<td><a class="cm-tasks-project-link" data-task="${esc(task.id)}">${esc(task.project_name)}</a></td>`
 			: "";
 
 		return `
@@ -251,8 +320,8 @@ construction_management.TaskList = class TaskList {
 				<td class="cm-tasks-nowrap">${esc(task.assigned_to)}</td>
 				<td>${construction_management.priority_badge(task.priority)}</td>
 				<td>${construction_management.status_pill(task.status)}</td>
-				<td class="cm-tasks-nowrap">${frappe.datetime.str_to_user(task.start)}</td>
-				<td class="cm-tasks-nowrap">${frappe.datetime.str_to_user(task.due)}</td>
+				<td class="cm-tasks-nowrap">${task.start ? frappe.datetime.str_to_user(task.start) : ""}</td>
+				<td class="cm-tasks-nowrap">${task.due ? frappe.datetime.str_to_user(task.due) : ""}</td>
 				<td class="cm-tasks-open">${frappe.utils.icon("right", "sm")}</td>
 			</tr>
 		`;

@@ -477,3 +477,239 @@ class TestInventory(FrappeTestCase):
 			self.assertEqual(row["reorder_level"], reorder)
 			if row["actual_qty"] > 0:
 				self.assertEqual(row["status"] == "Low Stock", reorder > 0 and row["actual_qty"] < reorder)
+
+	def test_19_transfer_queries_and_permissions(self):
+		"""TC-07 & TC-12: Transfer Link queries return company non-group stores and stock items."""
+		abbr = self._get_abbr()
+		central_wh = f"Central Store - {abbr}"
+		site_wh = f"Site Store - {abbr}"
+		group_wh = f"All Warehouses - {abbr}"
+
+		wh_rows = inventory.warehouse_query("Warehouse", "", "name", 0, 50, {"company": self.company})
+		wh_names = [r[0] for r in wh_rows]
+		self.assertIn(central_wh, wh_names)
+		self.assertIn(site_wh, wh_names)
+		self.assertNotIn(group_wh, wh_names)
+
+		central_match = inventory.warehouse_query("Warehouse", "Central", "name", 0, 20, {"company": self.company})
+		self.assertIn(central_wh, [r[0] for r in central_match])
+
+		item_rows = inventory.material_item_query("Item", "CM-CEM", "name", 0, 20, {})
+		self.assertIn("CM-CEM-001", [r[0] for r in item_rows])
+
+		restricted = self._user_with_roles("Employee")
+		frappe.set_user(restricted)
+		with self.assertRaises(frappe.PermissionError):
+			inventory.warehouse_query("Warehouse", "", "name", 0, 20, {"company": self.company})
+
+	def test_20_reserved_stock_validation_and_exact_available_transfer(self):
+		"""TC-11: Transfers validate against available_qty (actual - reserved) and reject without creating SE."""
+		abbr = self._get_abbr()
+		central_wh = f"Central Store - {abbr}"
+		site_wh = f"Site Store - {abbr}"
+		item_code = self._item()
+
+		self._ensure_stock_in_warehouse(item_code, central_wh, 20, rate=380.0)
+		bin_name = frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": central_wh}, "name")
+		orig_actual = flt(frappe.db.get_value("Bin", bin_name, "actual_qty"))
+		orig_reserved = flt(frappe.db.get_value("Bin", bin_name, "reserved_qty"))
+		new_reserved = orig_actual - 5.0
+		frappe.db.set_value("Bin", bin_name, "reserved_qty", new_reserved, update_modified=False)
+
+		try:
+			avail_info = inventory.get_item_availability(item_code, warehouse=central_wh)
+			self.assertAlmostEqual(avail_info["available_qty"], 5.0, places=3)
+
+			se_count_before = frappe.db.count("Stock Entry", {"company": self.company})
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				inventory.create_stock_transfer(
+					from_warehouse=central_wh,
+					to_warehouse=site_wh,
+					items=[{"item_code": item_code, "qty": 6}],
+					company=self.company,
+				)
+			self.assertIn("Available stock in", str(ctx.exception))
+			self.assertEqual(frappe.db.count("Stock Entry", {"company": self.company}), se_count_before)
+
+			# Exact available_qty (5.0) succeeds
+			res = inventory.create_stock_transfer(
+				from_warehouse=central_wh,
+				to_warehouse=site_wh,
+				items=[{"item_code": item_code, "qty": 5}],
+				company=self.company,
+				submit=1,
+			)
+			self.assertEqual(res["docstatus"], 1)
+		finally:
+			if frappe.db.exists("Bin", bin_name):
+				frappe.db.set_value("Bin", bin_name, "reserved_qty", orig_reserved, update_modified=False)
+
+	def test_21_nested_item_groups_and_breakdown_transfer_filters(self):
+		"""TC-03 & TC-05: Summary includes nested Item Groups; breakdown and transfer filters apply."""
+		abbr = self._get_abbr()
+		central_wh = f"Central Store - {abbr}"
+		site_wh = f"Site Store - {abbr}"
+
+		# Make "Cement & Concrete" a group temporarily or add a nested sub-group
+		nested_group_name = f"Sub Cement {frappe.generate_hash(length=4)}"
+		parent_group = "Cement & Concrete"
+		orig_is_group = frappe.db.get_value("Item Group", parent_group, "is_group")
+		frappe.db.set_value("Item Group", parent_group, "is_group", 1, update_modified=False)
+		try:
+			frappe.get_doc(
+				{
+					"doctype": "Item Group",
+					"item_group_name": nested_group_name,
+					"parent_item_group": parent_group,
+					"is_group": 0,
+				}
+			).insert(ignore_permissions=True)
+
+			nested_item = f"CM-NEST-{frappe.generate_hash(length=4)}"
+			frappe.get_doc(
+				{
+					"doctype": "Item",
+					"item_code": nested_item,
+					"item_name": "Nested Portland Cement",
+					"item_group": nested_group_name,
+					"cm_material_type": "Civil",
+					"stock_uom": "Bag",
+					"is_stock_item": 1,
+				}
+			).insert(ignore_permissions=True)
+
+			self._ensure_stock_in_warehouse(nested_item, central_wh, 8, rate=400.0)
+			summary = inventory.get_inventory_summary(company=self.company, search=nested_item)
+			self.assertTrue(any(r["item_code"] == nested_item for r in summary["items"]))
+
+			breakdown = inventory.get_warehouse_stock_breakdown(
+				company=self.company, warehouse=central_wh, search="Nested Portland"
+			)
+			self.assertTrue(any(r["item_code"] == nested_item for r in breakdown))
+
+			transfer = inventory.create_stock_transfer(
+				from_warehouse=central_wh,
+				to_warehouse=site_wh,
+				items=[{"item_code": nested_item, "qty": 2}],
+				company=self.company,
+				submit=1,
+			)
+			filtered_transfers = inventory.get_stock_transfers(
+				company=self.company, warehouse=site_wh, status="Submitted", search=transfer["name"]
+			)
+			self.assertEqual([t["name"] for t in filtered_transfers], [transfer["name"]])
+		finally:
+			frappe.db.set_value("Item Group", parent_group, "is_group", orig_is_group, update_modified=False)
+
+	def test_22_purchase_user_and_projects_user_restrictions(self):
+		"""TC-17 & TC-18: Purchase User can read stock only; Projects User is blocked from page & APIs."""
+		abbr = self._get_abbr()
+		central_wh = f"Central Store - {abbr}"
+		site_wh = f"Site Store - {abbr}"
+		item_code = self._item()
+
+		purchase_user = self._user_with_roles("Purchase User")
+		projects_user = self._user_with_roles("Projects User")
+
+		frappe.set_user(purchase_user)
+		self.assertTrue(frappe.get_doc("Page", "construction-inventory").is_permitted())
+		self.assertIn("kpis", inventory.get_inventory_summary(company=self.company))
+		self.assertIsInstance(inventory.get_warehouse_stock_breakdown(company=self.company), list)
+		self.assertTrue(len(inventory.warehouse_query("Warehouse", "", "name", 0, 20, {"company": self.company})) >= 1)
+		self.assertTrue(len(inventory.material_item_query("Item", "", "name", 0, 20, {})) >= 1)
+		with self.assertRaises(frappe.PermissionError):
+			inventory.create_stock_transfer(central_wh, site_wh, [{"item_code": item_code, "qty": 1}], company=self.company)
+		with self.assertRaises(frappe.PermissionError):
+			inventory.get_stock_transfers(company=self.company)
+
+		frappe.set_user(projects_user)
+		self.assertFalse(frappe.get_doc("Page", "construction-inventory").is_permitted())
+		for call in (
+			lambda: inventory.get_inventory_summary(company=self.company),
+			lambda: inventory.get_warehouse_stock_breakdown(company=self.company),
+			lambda: inventory.get_item_availability(item_code, warehouse=central_wh),
+			lambda: inventory.get_stock_transfers(company=self.company),
+			lambda: inventory.create_stock_transfer(central_wh, site_wh, [{"item_code": item_code, "qty": 1}], company=self.company),
+			lambda: inventory.warehouse_query("Warehouse", "", "name", 0, 20, {"company": self.company}),
+		):
+			with self.assertRaises(frappe.PermissionError):
+				call()
+
+	def test_23_grn_submission_updates_inventory_summary(self):
+		"""TC-15: Submitting a Purchase Receipt (GRN) increases inventory summary stock."""
+		from frappe.utils import add_days, nowdate
+		from construction_management.grn import make_grn
+
+		abbr = self._get_abbr()
+		central_wh = f"Central Store - {abbr}"
+		item_code = self._item()
+
+		supplier = frappe.get_doc(
+			{
+				"doctype": "Supplier",
+				"supplier_name": f"Inv GRN Sup {frappe.generate_hash(length=4)}",
+				"supplier_group": frappe.db.get_value("Supplier Group", {"is_group": 0}, "name"),
+				"cm_specialization": "Cement & Concrete",
+			}
+		).insert(ignore_permissions=True)
+
+		before_summary = next(
+			r["actual_qty"]
+			for r in inventory.get_inventory_summary(company=self.company, warehouse=central_wh)["items"]
+			if r["item_code"] == item_code
+		)
+
+		po = frappe.get_doc(
+			{
+				"doctype": "Purchase Order",
+				"supplier": supplier.name,
+				"company": self.company,
+				"transaction_date": nowdate(),
+				"schedule_date": add_days(nowdate(), 3),
+				"set_warehouse": central_wh,
+				"items": [
+					{
+						"item_code": item_code,
+						"qty": 10,
+						"rate": 380,
+						"warehouse": central_wh,
+						"schedule_date": add_days(nowdate(), 3),
+					}
+				],
+			}
+		).insert(ignore_permissions=True)
+		po.submit()
+
+		grn_name = make_grn(
+			po.name,
+			[{"purchase_order_item": po.items[0].name, "qty": 10}],
+			warehouse=central_wh,
+		)
+		# Draft GRN must not change inventory summary
+		mid_summary = next(
+			r["actual_qty"]
+			for r in inventory.get_inventory_summary(company=self.company, warehouse=central_wh)["items"]
+			if r["item_code"] == item_code
+		)
+		self.assertAlmostEqual(mid_summary, before_summary, places=3)
+
+		grn = frappe.get_doc("Purchase Receipt", grn_name)
+		grn.submit()
+
+		after_summary = next(
+			r["actual_qty"]
+			for r in inventory.get_inventory_summary(company=self.company, warehouse=central_wh)["items"]
+			if r["item_code"] == item_code
+		)
+		self.assertAlmostEqual(after_summary, before_summary + 10.0, places=3)
+
+	def test_24_workspace_and_page_metadata(self):
+		"""TC-02 & TC-14: Verify Page and Workspace shortcut metadata registration."""
+		page = frappe.get_doc("Page", "construction-inventory")
+		self.assertEqual(page.standard, "Yes")
+		self.assertEqual(page.module, "Construction Management")
+
+		ws = frappe.get_doc("Workspace", "Construction Management")
+		shortcuts = {s.label: (s.type, s.link_to) for s in ws.shortcuts}
+		self.assertEqual(shortcuts.get("Inventory"), ("Page", "construction-inventory"))
+		self.assertEqual(shortcuts.get("Stock Transfers"), ("DocType", "Stock Entry"))

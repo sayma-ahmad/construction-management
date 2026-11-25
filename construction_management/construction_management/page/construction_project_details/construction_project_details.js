@@ -15,23 +15,11 @@ const CM_PROJECT_TABS = [
 	{ key: "materials", label: "Materials" },
 ];
 
+const CM_PROJECT_METHOD = "construction_management.construction_management.project.get_construction_project";
 const CM_PROJECT_DPRS_METHOD =
 	"construction_management.construction_management.doctype.daily_progress_report.daily_progress_report.get_project_dprs";
 const CM_PROJECT_WORK_ORDERS_METHOD =
 	"construction_management.construction_management.doctype.construction_work_order.construction_work_order.get_project_work_orders";
-
-const CM_PROJECT_PLACEHOLDERS = {
-	issues: {
-		icon: "solid-warning",
-		title: "Site Issues",
-		text: "Issues raised on site for this project will appear here.",
-	},
-	materials: {
-		icon: "stock",
-		title: "Materials",
-		text: "Material requests, receipts and stock for this project will appear here.",
-	},
-};
 const CM_PROJECT_MATERIALS_METHOD =
 	"construction_management.construction_management.material_request.get_project_material_requests";
 const CM_PROJECT_ISSUES_METHOD =
@@ -48,7 +36,7 @@ frappe.pages["construction-project-details"].on_page_load = function (wrapper) {
 	wrapper.project_details = new ProjectDetails(page);
 };
 
-// Route: /app/construction-project-details/<project code>[/<tab>]
+// Route: /app/construction-project-details/<project code or ERPNext Project name>[/<tab>]
 frappe.pages["construction-project-details"].on_page_show = function (wrapper) {
 	const route = frappe.get_route();
 	wrapper.project_details.show(route[1], route[2]);
@@ -59,21 +47,46 @@ class ProjectDetails {
 		this.page = page;
 		this.ready = frappe.require(CM_PROJECT_DETAIL_ASSETS);
 		this.$wrapper = $(`<div class="cm-pd"></div>`).appendTo(page.main);
-		this.$wrapper.on("click", ".cm-pd-tab", (e) => this.set_tab($(e.currentTarget).attr("data-tab")));
+		this.$wrapper.on("click", ".cm-pd-tab", (e) => {
+			const tab = $(e.currentTarget).attr("data-tab");
+			if (this.project && this.project.code) {
+				frappe.set_route("construction-project-details", this.project.code, tab);
+			}
+			this.set_tab(tab);
+		});
 	}
 
 	show(code, tab) {
-		this.ready.then(() => {
-			const project = construction_management.SAMPLE_PROJECTS.find((p) => p.code === code);
-			if (!project) {
-				this.render_not_found();
-				return;
-			}
-			this.project = project;
-			this.page.set_title(project.name);
-			this.render();
-			this.set_tab(CM_PROJECT_TABS.some((t) => t.key === tab) ? tab : "overview");
-		});
+		this.ready
+			.then(() => frappe.call({ method: CM_PROJECT_METHOD, args: { key: code } }))
+			.then((r) => {
+				if (frappe.get_route()[1] !== code) {
+					return;
+				}
+				if (!r.message) {
+					this.render_not_found();
+					return;
+				}
+				this.project = this.to_project(r.message);
+				this.page.set_title(this.project.name);
+				this.render();
+				this.set_tab(CM_PROJECT_TABS.some((t) => t.key === tab) ? tab : "overview");
+			});
+	}
+
+	// Sample projects still supply the manager and description, which ERPNext Projects do not store.
+	to_project(data) {
+		const sample = construction_management.SAMPLE_PROJECTS.find((p) => p.code === data.code) || {};
+		return {
+			...data,
+			client: data.client || sample.client || "",
+			manager: sample.manager || "",
+			description: sample.description || frappe.utils.html2text(data.notes || "").trim(),
+		};
+	}
+
+	progress_text(progress) {
+		return progress === null || progress === undefined ? __("Not set") : `${Math.round(progress)}%`;
 	}
 
 	render() {
@@ -83,15 +96,15 @@ class ProjectDetails {
 
 		this.$wrapper.html(`
 			<div class="cm-pd-header">
-				<span class="cm-pd-subtitle">${esc(p.code)} · ${esc(p.client)} · ${esc(p.location)}</span>
+				<span class="cm-pd-subtitle">${esc([p.code, p.client, p.location].filter(Boolean).join(" · "))}</span>
 				${construction_management.status_pill(p.status)}
 			</div>
 
 			<div class="cm-pd-summary">
 				<div class="cm-pd-card cm-pd-stat">
 					<div class="cm-pd-stat-label">${__("Project Progress")}</div>
-					<div class="cm-pd-stat-value">${p.progress}%</div>
-					${this.progress_bar(p.progress)}
+					<div class="cm-pd-stat-value">${this.progress_text(p.progress)}</div>
+					${this.progress_bar(Math.round(p.progress || 0))}
 				</div>
 				${this.stat_card(__("Total Tasks"), p.total_tasks, __("Across all phases"))}
 				${this.stat_card(__("Completed Tasks"), p.completed_tasks, __("{0}% of all tasks", [this.percent(p.completed_tasks, p.total_tasks)]))}
@@ -109,19 +122,15 @@ class ProjectDetails {
 			<div class="cm-pd-panel" data-panel="phases"></div>
 			<div class="cm-pd-panel" data-panel="dpr">${this.dpr_loading_panel()}</div>
 			<div class="cm-pd-panel" data-panel="work_orders">${this.work_orders_loading_panel()}</div>
-			${Object.keys(CM_PROJECT_PLACEHOLDERS)
-				.map((key) => `<div class="cm-pd-panel" data-panel="${key}">${this.placeholder_panel(key)}</div>`)
-				.join("")}
-		`);
-		this._dprs_loaded = false;
-		this._dprs_loading = false;
-		this._work_orders_loaded = false;
-		this._work_orders_loading = false;
 			<div class="cm-pd-panel" data-panel="issues">${this.issues_loading_panel()}</div>
 			<div class="cm-pd-panel" data-panel="materials">${this.materials_loading_panel()}</div>
 		`);
 		this._dprs_loaded = false;
 		this._dprs_loading = false;
+		this._work_orders_loaded = false;
+		this._work_orders_loading = false;
+		this._work_orders_loaded = false;
+		this._work_orders_loading = false;
 		this._materials_loaded = false;
 		this._materials_loading = false;
 		this._issues_loaded = false;
@@ -140,12 +149,26 @@ class ProjectDetails {
 		`);
 		$panel.find(".cm-pd-all-phases").on("click", () => frappe.set_route("construction-phases", this.project.code));
 
-		new construction_management.PhaseList({
+		const project = this.project;
+		const phase_list = new construction_management.PhaseList({
 			parent: $panel,
-			phases: construction_management.get_project_phases(this.project),
+			loader: () =>
+				construction_management
+					.load_phases({ project_name: project.name, project_code: project.code })
+					.then((data) => {
+						phase_list.default_project = data.mapped_project;
+						this.show_current_phase(data.phases);
+						return data.phases;
+					}),
 			show_project: false,
 			show_create: true,
 		});
+	}
+
+	show_current_phase(phases) {
+		const current = phases.find((phase) => phase.status !== "Completed");
+		const text = !phases.length ? __("No phases recorded") : current ? current.name : __("All phases complete");
+		this.$wrapper.find(".cm-pd-current-phase .cm-pd-field-value").text(text);
 	}
 
 	render_tasks() {
@@ -158,9 +181,16 @@ class ProjectDetails {
 		`);
 		$panel.find(".cm-pd-all-tasks").on("click", () => frappe.set_route("construction-tasks", this.project.code));
 
-		new construction_management.TaskList({
+		const project = this.project;
+		const task_list = new construction_management.TaskList({
 			parent: $panel,
-			tasks: construction_management.SAMPLE_TASKS.filter((task) => task.project === this.project.code),
+			loader: () =>
+				construction_management
+					.load_tasks({ project_name: project.name, project_code: project.code })
+					.then((data) => {
+						task_list.default_project = data.mapped_project;
+						return data.tasks;
+					}),
 			show_project: false,
 			show_create: true,
 		});
@@ -172,7 +202,7 @@ class ProjectDetails {
 		this.$wrapper.html(`
 			<div class="cm-pd-card cm-pd-empty">
 				<div class="cm-pd-empty-title">${__("Project not found")}</div>
-				<div class="cm-pd-empty-text">${__("This project does not exist in the sample data.")}</div>
+				<div class="cm-pd-empty-text">${__("This project does not exist or you do not have access to it.")}</div>
 				<button class="btn btn-sm btn-default cm-pd-back">${__("Back to Projects")}</button>
 			</div>
 		`);
@@ -192,6 +222,7 @@ class ProjectDetails {
 		}
 		if (key === "work_orders" && this.project && !this._work_orders_loaded && !this._work_orders_loading) {
 			this.load_work_orders();
+		}
 		if (key === "materials" && this.project && !this._materials_loaded && !this._materials_loading) {
 			this.load_materials();
 		}
@@ -210,15 +241,14 @@ class ProjectDetails {
 			[__("Location"), esc(p.location)],
 			[__("Status"), construction_management.status_pill(p.status)],
 			[__("Project Manager"), esc(p.manager)],
-			[__("Start Date"), frappe.datetime.str_to_user(p.start)],
-			[__("End Date"), frappe.datetime.str_to_user(p.end)],
+			[__("Start Date"), p.start ? frappe.datetime.str_to_user(p.start) : ""],
+			[__("End Date"), p.end ? frappe.datetime.str_to_user(p.end) : ""],
 		];
 
-		const total_days = Math.max(frappe.datetime.get_diff(p.end, p.start), 1);
-		const elapsed_days = Math.min(Math.max(frappe.datetime.get_diff(frappe.datetime.get_today(), p.start), 0), total_days);
-		const current_phase = construction_management
-			.get_project_phases(p)
-			.find((phase) => phase.progress < 100);
+		const total_days = p.start && p.end ? Math.max(frappe.datetime.get_diff(p.end, p.start), 1) : 0;
+		const elapsed_days = total_days
+			? Math.min(Math.max(frappe.datetime.get_diff(frappe.datetime.get_today(), p.start), 0), total_days)
+			: 0;
 
 		return `
 			<div class="cm-pd-overview">
@@ -244,20 +274,20 @@ class ProjectDetails {
 					<div class="cm-pd-progress-row">
 						<div class="cm-pd-progress-label">
 							<span>${__("Work Completed")}</span>
-							<span>${p.progress}%</span>
+							<span>${this.progress_text(p.progress)}</span>
 						</div>
-						${this.progress_bar(p.progress)}
+						${this.progress_bar(Math.round(p.progress || 0))}
 					</div>
 					<div class="cm-pd-progress-row">
 						<div class="cm-pd-progress-label">
 							<span>${__("Time Elapsed")}</span>
-							<span>${__("{0} of {1} days", [elapsed_days, total_days])}</span>
+							<span>${total_days ? __("{0} of {1} days", [elapsed_days, total_days]) : __("Dates not set")}</span>
 						</div>
 						${this.progress_bar(this.percent(elapsed_days, total_days), "time")}
 					</div>
 					<div class="cm-pd-current-phase">
 						<div class="cm-pd-field-label">${__("Current Phase")}</div>
-						<div class="cm-pd-field-value">${current_phase ? __(current_phase.name) : __("All phases complete")}</div>
+						<div class="cm-pd-field-value">${__("Loading...")}</div>
 					</div>
 				</div>
 			</div>
@@ -400,11 +430,6 @@ class ProjectDetails {
 			<div class="cm-pd-card cm-pd-empty">
 				<div class="cm-pd-empty-title">${__("Work Orders")}</div>
 				<div class="cm-pd-empty-text">${__("Loading Work Orders...")}</div>
-	materials_loading_panel() {
-		return `
-			<div class="cm-pd-card cm-pd-empty">
-				<div class="cm-pd-empty-title">${__("Material Requisitions")}</div>
-				<div class="cm-pd-empty-text">${__("Loading Material Requisitions...")}</div>
 			</div>
 		`;
 	}
@@ -416,13 +441,6 @@ class ProjectDetails {
 
 		frappe.call({
 			method: CM_PROJECT_WORK_ORDERS_METHOD,
-	load_materials() {
-		const current_code = this.project?.code;
-		const $panel = this.$wrapper.find('.cm-pd-panel[data-panel="materials"]');
-		this._materials_loading = true;
-
-		frappe.call({
-			method: CM_PROJECT_MATERIALS_METHOD,
 			args: {
 				project_name: this.project.name,
 				project_code: this.project.code,
@@ -438,16 +456,6 @@ class ProjectDetails {
 			},
 			error: () => {
 				this._work_orders_loading = false;
-				this._materials_loading = false;
-				if (this.project?.code !== current_code) {
-					return;
-				}
-				this._materials_loaded = true;
-				const data = r.message || {};
-				this.render_materials_panel($panel, data.mapped_project, data.material_requests || []);
-			},
-			error: () => {
-				this._materials_loading = false;
 				if (this.project?.code !== current_code) {
 					return;
 				}
@@ -468,20 +476,6 @@ class ProjectDetails {
 	render_work_orders_panel($panel, mapped_project, work_orders) {
 		const esc = frappe.utils.escape_html;
 		const can_create_wo = frappe.model.can_create("Construction Work Order");
-						<div class="cm-pd-empty-title">${__("Unable to load Material Requisitions")}</div>
-						<div class="cm-pd-empty-text">${__("Please try again or open the Material Requisitions page.")}</div>
-						<button class="btn btn-sm btn-default cm-pd-open-mrs">${__("Open Material Requisitions")}</button>
-					</div>
-				`);
-				$panel
-					.find(".cm-pd-open-mrs")
-					.on("click", () => frappe.set_route("material-requisitions"));
-			},
-		});
-	}
-
-	render_materials_panel($panel, mapped_project, material_requests) {
-		const esc = frappe.utils.escape_html;
 
 		if (!mapped_project) {
 			$panel.html(`
@@ -515,6 +509,110 @@ class ProjectDetails {
 								<td>${esc(row.title || "")}</td>
 								<td>${esc(contractor_label)}</td>
 								<td><span class="cm-status cm-status-${status_class}">${__(status)}</span></td>
+								<td>${frappe.utils.icon("right", "sm")}</td>
+							</tr>
+						`;
+				})
+				.join("")
+			: `<tr><td colspan="5" class="cm-pd-empty-text" style="text-align:center; padding: 24px;">${__(
+				"No Work Orders recorded for this project yet."
+			)}</td></tr>`;
+
+		$panel.html(`
+			<div class="cm-pd-card">
+				<div class="cm-pd-wo-header">
+					<div class="cm-pd-card-title">${__("Work Orders")}</div>
+					<div class="cm-pd-wo-actions">
+						<button class="btn btn-xs btn-default cm-pd-open-work-orders">${__("View All")}</button>
+						${can_create_wo ? `<button class="btn btn-xs btn-primary cm-pd-new-work-order">${__("New Work Order")}</button>` : ""}
+					</div>
+				</div>
+				<div class="cm-pd-wo-table-wrap">
+					<table class="cm-pd-wo-table">
+						<thead>
+							<tr>
+								<th>${__("Work Order ID")}</th>
+								<th>${__("Title")}</th>
+								<th>${__("Contractor")}</th>
+								<th>${__("Status")}</th>
+								<th></th>
+							</tr>
+						</thead>
+						<tbody>${rows_html}</tbody>
+					</table>
+				</div>
+			</div>
+		`);
+
+		$panel
+			.find(".cm-pd-open-work-orders")
+			.on("click", () => frappe.set_route("construction-work-orders"));
+		if (can_create_wo) {
+			$panel
+				.find(".cm-pd-new-work-order")
+				.on("click", () => frappe.new_doc("Construction Work Order", { project: mapped_project }));
+		}
+		$panel
+			.off("click", "tbody tr[data-work-order]")
+			.on("click", "tbody tr[data-work-order]", (e) => {
+				frappe.set_route("Form", "Construction Work Order", $(e.currentTarget).attr("data-work-order"));
+			});
+	}
+
+	materials_loading_panel() {
+		return `
+			<div class="cm-pd-card cm-pd-empty">
+				<div class="cm-pd-empty-title">${__("Material Requisitions")}</div>
+				<div class="cm-pd-empty-text">${__("Loading Material Requisitions...")}</div>
+			</div>
+		`;
+	}
+
+	load_materials() {
+		const current_code = this.project?.code;
+		const $panel = this.$wrapper.find('.cm-pd-panel[data-panel="materials"]');
+		this._materials_loading = true;
+
+		frappe.call({
+			method: CM_PROJECT_MATERIALS_METHOD,
+			args: {
+				project_name: this.project.name,
+				project_code: this.project.code,
+			},
+			callback: (r) => {
+				this._materials_loading = false;
+				if (this.project?.code !== current_code) {
+					return;
+				}
+				this._materials_loaded = true;
+				const data = r.message || {};
+				this.render_materials_panel($panel, data.mapped_project, data.material_requests || []);
+			},
+			error: () => {
+				this._materials_loading = false;
+				if (this.project?.code !== current_code) {
+					return;
+				}
+				$panel.html(`
+					<div class="cm-pd-card cm-pd-empty">
+						<div class="cm-pd-empty-title">${__("Unable to load Material Requisitions")}</div>
+						<div class="cm-pd-empty-text">${__("Please try again or open the Material Requisitions page.")}</div>
+						<button class="btn btn-sm btn-default cm-pd-open-mrs">${__("Open Material Requisitions")}</button>
+					</div>
+				`);
+				$panel
+					.find(".cm-pd-open-mrs")
+					.on("click", () => frappe.set_route("material-requisitions"));
+			},
+		});
+	}
+
+	render_materials_panel($panel, mapped_project, material_requests) {
+		const esc = frappe.utils.escape_html;
+
+		if (!mapped_project) {
+			$panel.html(`
+				<div class="cm-pd-card cm-pd-empty">
 					<div class="cm-pd-empty-icon">${frappe.utils.icon("stock", "lg")}</div>
 					<div class="cm-pd-empty-title">${__("No Linked ERPNext Project Found")}</div>
 					<div class="cm-pd-empty-text">
@@ -701,27 +799,6 @@ class ProjectDetails {
 						`;
 				})
 				.join("")
-			: `<tr><td colspan="5" class="cm-pd-empty-text" style="text-align:center; padding: 24px;">${__(
-				"No Work Orders recorded for this project yet."
-			)}</td></tr>`;
-
-		$panel.html(`
-			<div class="cm-pd-card">
-				<div class="cm-pd-wo-header">
-					<div class="cm-pd-card-title">${__("Work Orders")}</div>
-					<div class="cm-pd-wo-actions">
-						<button class="btn btn-xs btn-default cm-pd-open-work-orders">${__("View All")}</button>
-						${can_create_wo ? `<button class="btn btn-xs btn-primary cm-pd-new-work-order">${__("New Work Order")}</button>` : ""}
-					</div>
-				</div>
-				<div class="cm-pd-wo-table-wrap">
-					<table class="cm-pd-wo-table">
-						<thead>
-							<tr>
-								<th>${__("Work Order ID")}</th>
-								<th>${__("Title")}</th>
-								<th>${__("Contractor")}</th>
-								<th>${__("Status")}</th>
 			: `<tr><td colspan="7" class="cm-pd-empty-text" style="text-align:center; padding: 24px;">${__(
 				"No Construction Issues recorded for this project yet."
 			)}</td></tr>`;
@@ -757,19 +834,6 @@ class ProjectDetails {
 		`);
 
 		$panel
-			.find(".cm-pd-open-work-orders")
-			.on("click", () => frappe.set_route("construction-work-orders"));
-		if (can_create_wo) {
-			$panel
-				.find(".cm-pd-new-work-order")
-				.on("click", () => frappe.new_doc("Construction Work Order", { project: mapped_project }));
-		}
-		$panel
-			.off("click", "tbody tr[data-work-order]")
-			.on("click", "tbody tr[data-work-order]", (e) => {
-				frappe.set_route("Form", "Construction Work Order", $(e.currentTarget).attr("data-work-order"));
-			});
-	}
 			.find(".cm-pd-open-issues")
 			.on("click", () => frappe.set_route("construction-issues"));
 		if (can_create_issue) {

@@ -26,7 +26,7 @@ required_apps = ["erpnext"]
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/construction_management/css/construction_management.css"
-# app_include_js = "/assets/construction_management/js/construction_management.js"
+app_include_js = "/assets/construction_management/js/workspace_shortcuts.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/construction_management/css/construction_management.css"
@@ -88,6 +88,7 @@ doctype_js = {
 after_install = [
 	"construction_management.materials.setup",
 	"construction_management.vendors.setup",
+	"construction_management.construction_management.project.setup",
 	"construction_management.purchase_orders.setup",
 	"construction_management.construction_management.material_request.setup",
 	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
@@ -97,6 +98,7 @@ after_install = [
 after_migrate = [
 	"construction_management.materials.setup",
 	"construction_management.vendors.setup",
+	"construction_management.construction_management.project.setup",
 	"construction_management.purchase_orders.setup",
 	"construction_management.construction_management.material_request.setup",
 	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
@@ -185,8 +187,23 @@ fixtures = [
 	{
 		"dt": "Custom DocPerm",
 		"filters": [
-			["parent", "in", ["Material Request", "Item", "Issue", "Issue Type", "Issue Priority"]],
-			["role", "in", ["Projects Manager", "Projects User"]],
+			[
+				"parent",
+				"in",
+				[
+					"Material Request",
+					"Item",
+					"Issue",
+					"Issue Type",
+					"Issue Priority",
+					"Task",
+					"Address",
+					"Project",
+					"Warehouse",
+					"Purchase Order",
+				],
+			],
+			["name", "like", "cm-%"],
 		],
 	},
 	{

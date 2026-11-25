@@ -96,6 +96,12 @@ function render_dashboard(container, data) {
 			</div>
 			<div class="cm-row">
 				<div class="cm-card cm-span-12">
+					${section_header(__("Expense Flow"), __("Monthly project expenditure and financial outflow"))}
+					<div class="cm-expense-chart"></div>
+				</div>
+			</div>
+			<div class="cm-row">
+				<div class="cm-card cm-span-12">
 					${section_header(__("Recent Site Activity"), __("Latest updates across site reports and operations"))}
 					<div class="cm-activity-list"></div>
 				</div>
@@ -109,7 +115,7 @@ function render_dashboard(container, data) {
 	$dashboard.find(".cm-activity-list").html((data.activity || []).map(activity_item).join(""));
 
 	// KPI card click handler with permission verification
-	$dashboard.find(".cm-kpi-grid").on("click", ".cm-kpi-clickable", function () {
+	$dashboard.find(".cm-kpi-grid").on("click", ".cm-kpi", function () {
 		const route = $(this).attr("data-route");
 		const doctype = $(this).attr("data-doctype");
 		if (doctype && !frappe.model.can_read(doctype)) {
@@ -204,6 +210,43 @@ function render_dashboard(container, data) {
 		$dashboard.find(".cm-inventory-chart").html(`
 			<div class="text-center text-muted p-5">
 				<div>${__("No stock items found in warehouse inventory.")}</div>
+			</div>
+		`);
+	}
+
+	// 4. Expense Flow Chart (US-03 / TC-06)
+	const fin = (data.metrics && data.metrics.financial) || {};
+	const expenseData = data.expense_flow || fin.expense_flow;
+	const hasExpense = expenseData && expenseData.values && expenseData.values.some((v) => v > 0);
+	const expenseCurrency = (expenseData && expenseData.currency) || fin.currency || (frappe.boot && frappe.boot.sysdefaults && frappe.boot.sysdefaults.currency) || "INR";
+
+	if (hasExpense) {
+		new frappe.Chart($dashboard.find(".cm-expense-chart")[0], {
+			type: "bar",
+			height: 240,
+			colors: [COLORS.accent],
+			data: {
+				labels: expenseData.labels,
+				datasets: [
+					{ name: __("Monthly Expenses"), values: expenseData.values },
+				],
+			},
+			tooltipOptions: {
+				formatTooltipY: (value) => format_currency(value, expenseCurrency, 0),
+			},
+		});
+	} else if (fin.total_expenses && fin.total_expenses > 0) {
+		$dashboard.find(".cm-expense-chart").html(`
+			<div class="text-center p-4">
+				<div class="text-muted mb-1">${__("Total Incurred Expenditure")}</div>
+				<div class="h3 font-weight-bold text-dark">${format_currency(fin.total_expenses, expenseCurrency, 0)}</div>
+				<div class="text-muted mt-2">${__("Outstanding Payables: {0}", [format_currency(fin.total_payables || 0, expenseCurrency, 0)])}</div>
+			</div>
+		`);
+	} else {
+		$dashboard.find(".cm-expense-chart").html(`
+			<div class="text-center text-muted p-5">
+				<div>${__("No expense records found across projects.")}</div>
 			</div>
 		`);
 	}

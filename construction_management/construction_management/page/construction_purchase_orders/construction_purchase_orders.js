@@ -252,7 +252,7 @@ class PurchaseOrderList {
 			if (status && po.status !== status) return false;
 			if (supplier && po.supplier_name !== supplier) return false;
 			if (search) {
-				const target = `${po.name} ${po.supplier_name} ${po.project} ${po.project_name} ${po.items_summary}`.toLowerCase();
+				const target = `${po.name} ${po.title || ""} ${po.supplier_name} ${po.project} ${po.project_name} ${po.items_summary}`.toLowerCase();
 				if (!target.includes(search)) return false;
 			}
 			return true;
@@ -631,7 +631,10 @@ function po_row(po) {
 
 	return `
 		<tr data-po="${esc(po.name)}" title="${__("Open Purchase Order")}">
-			<td class="cm-tasks-name">${esc(po.name)}</td>
+			<td>
+				<div class="cm-tasks-name">${esc(po.name)}</div>
+				${po.title ? `<div class="small text-muted">${esc(po.title)}</div>` : ""}
+			</td>
 			<td>
 				<div class="font-weight-bold">${esc(po.project_name || po.project)}</div>
 				<div class="small text-muted">${esc(po.project)}</div>

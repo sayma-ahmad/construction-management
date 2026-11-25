@@ -266,6 +266,7 @@ def get_purchase_orders(project=None, status=None, supplier=None, search=None, s
 
 	fields = [
 		"name",
+		"title",
 		"supplier",
 		"supplier_name",
 		"project",
@@ -289,6 +290,7 @@ def get_purchase_orders(project=None, status=None, supplier=None, search=None, s
 		like = f"%{term}%"
 		or_filters = [
 			["Purchase Order", "name", "like", like],
+			["Purchase Order", "title", "like", like],
 			["Purchase Order", "supplier", "like", like],
 			["Purchase Order", "supplier_name", "like", like],
 			["Purchase Order", "project", "like", like],
@@ -353,6 +355,7 @@ def get_purchase_orders(project=None, status=None, supplier=None, search=None, s
 		result.append(
 			{
 				"name": po.name,
+				"title": po.title if po.title and po.title != po.supplier_name else "",
 				"supplier": po.supplier,
 				"supplier_name": po.supplier_name or po.supplier,
 				"project": proj_ref,

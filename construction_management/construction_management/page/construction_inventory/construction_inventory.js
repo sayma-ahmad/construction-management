@@ -36,6 +36,8 @@ class ConstructionInventoryView {
 	constructor(page) {
 		this.page = page;
 		this.current_tab = "summary";
+		this.company = frappe.defaults.get_user_default("Company") || frappe.boot.sysdefaults?.company || "";
+		this.can_view_transfers = frappe.model.can_read("Stock Entry");
 		this.warehouses = [];
 		this.categories = [];
 		this.make_layout();
@@ -86,7 +88,7 @@ class ConstructionInventoryView {
 				<div class="cm-inventory-tabs">
 					<div class="cm-inventory-tab active" data-tab="summary">${__("Material Stock Summary")}</div>
 					<div class="cm-inventory-tab" data-tab="breakdown">${__("Warehouse Breakdown")}</div>
-					<div class="cm-inventory-tab" data-tab="transfers">${__("Transfer History")}</div>
+					${this.can_view_transfers ? `<div class="cm-inventory-tab" data-tab="transfers">${__("Transfer History")}</div>` : ""}
 				</div>
 
 				<!-- Toolbar / Filters -->
@@ -279,13 +281,14 @@ class ConstructionInventoryView {
 		const current_seq = this._breakdown_seq;
 
 		const warehouse = this.$wrapper.find(".cm-inv-warehouse-filter").val();
+		const search = this.$wrapper.find(".cm-inv-search").val();
 		this.$wrapper.find("#cm-inv-table-container").html(`
 			<div class="text-center p-4 text-muted">${__("Loading warehouse breakdown...")}</div>
 		`);
 
 		frappe.call({
 			method: "construction_management.inventory.get_warehouse_stock_breakdown",
-			args: { warehouse },
+			args: { warehouse, search },
 			callback: (r) => {
 				if (current_seq !== this._breakdown_seq) return;
 				const rows = r.message || [];
@@ -346,8 +349,20 @@ class ConstructionInventoryView {
 	}
 
 	render_transfers_table() {
+		if (!this.can_view_transfers) {
+			this.$wrapper.find("#cm-inv-table-container").html(`
+				<div class="text-center p-5 text-muted">
+					<p>${__("You do not have permission to view Stock Transfers.")}</p>
+				</div>
+			`);
+			return;
+		}
+
 		this._transfers_seq = (this._transfers_seq || 0) + 1;
 		const current_seq = this._transfers_seq;
+
+		const warehouse = this.$wrapper.find(".cm-inv-warehouse-filter").val();
+		const search = this.$wrapper.find(".cm-inv-search").val();
 
 		this.$wrapper.find("#cm-inv-table-container").html(`
 			<div class="text-center p-4 text-muted">${__("Loading stock transfers...")}</div>
@@ -355,6 +370,7 @@ class ConstructionInventoryView {
 
 		frappe.call({
 			method: "construction_management.inventory.get_stock_transfers",
+			args: { warehouse, search },
 			callback: (r) => {
 				if (current_seq !== this._transfers_seq) return;
 				const transfers = r.message || [];
@@ -385,6 +401,12 @@ class ConstructionInventoryView {
 				`;
 
 				transfers.forEach((t) => {
+					const badgeClass =
+						t.status === "Submitted"
+							? "badge-success"
+							: t.status === "Cancelled"
+							? "badge-danger"
+							: "badge-warning";
 					html += `
 						<tr>
 							<td class="font-weight-bold"><a href="/app/stock-entry/${encodeURIComponent(t.name)}">${frappe.utils.escape_html(t.name)}</a></td>
@@ -394,7 +416,7 @@ class ConstructionInventoryView {
 							<td>${t.project ? frappe.utils.escape_html(t.project) : '<span class="text-muted">—</span>'}</td>
 							<td class="text-right">${t.item_count}</td>
 							<td class="text-right font-weight-bold">${format_number(t.total_qty, null, 2)}</td>
-							<td class="text-center"><span class="badge ${t.status === 'Submitted' ? 'badge-success' : 'badge-warning'}">${__(t.status)}</span></td>
+							<td class="text-center"><span class="badge ${badgeClass}">${__(t.status)}</span></td>
 						</tr>
 					`;
 				});
@@ -416,7 +438,10 @@ class ConstructionInventoryView {
 					options: "Warehouse",
 					label: __("Source Warehouse (From)"),
 					reqd: 1,
-					get_query: () => ({ filters: { is_group: 0 } }),
+					get_query: () => ({
+						query: "construction_management.inventory.warehouse_query",
+						filters: { company: this.company },
+					}),
 					change: () => this.update_dialog_availability(dialog),
 				},
 				{
@@ -425,7 +450,10 @@ class ConstructionInventoryView {
 					options: "Warehouse",
 					label: __("Target Warehouse (To)"),
 					reqd: 1,
-					get_query: () => ({ filters: { is_group: 0 } }),
+					get_query: () => ({
+						query: "construction_management.inventory.warehouse_query",
+						filters: { company: this.company },
+					}),
 				},
 				{ fieldtype: "Column Break" },
 				{
@@ -446,7 +474,9 @@ class ConstructionInventoryView {
 					options: "Item",
 					label: __("Material Item"),
 					reqd: 1,
-					get_query: () => ({ filters: { is_stock_item: 1, disabled: 0 } }),
+					get_query: () => ({
+						query: "construction_management.inventory.material_item_query",
+					}),
 					change: () => this.update_dialog_availability(dialog),
 				},
 				{
