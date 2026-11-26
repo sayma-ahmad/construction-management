@@ -7,7 +7,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
-from construction_management.construction_management.utils import resolve_erpnext_project
+from construction_management.construction_management.utils import count_permitted, resolve_erpnext_project
 
 
 def setup():
@@ -231,13 +231,7 @@ def get_material_requisition_list(filters=None, search=None, start=0, page_lengt
 
 	_attach_resolved_projects(records)
 
-	count_rows = frappe.get_list(
-		"Material Request",
-		fields=["count(name) as total"],
-		filters=query_filters,
-		or_filters=or_filters,
-	)
-	total = cint(count_rows[0].total) if count_rows else 0
+	total = count_permitted("Material Request", query_filters, or_filters)
 
 	return {
 		"records": records,

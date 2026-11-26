@@ -72,6 +72,13 @@ def ensure_standard_docperms_for_customized_doctypes():
 			frappe.get_doc(custom_perm).insert(ignore_permissions=True)
 
 
+def count_permitted(doctype, filters=None, or_filters=None):
+	"""Count the records the user may read, without SQL function strings (rejected by Frappe v16)."""
+	return len(
+		frappe.get_list(doctype, filters=filters, or_filters=or_filters, pluck="name", limit_page_length=0)
+	)
+
+
 def resolve_erpnext_project(project_name=None, project_code=None):
 	"""Resolve a project name or code to an actual permission-accessible ERPNext Project.
 

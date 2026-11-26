@@ -12,8 +12,14 @@ class ProjectPhase(Document):
 
 	def before_insert(self):
 		if not self.sequence and self.project:
-			last = frappe.db.get_value("Project Phase", {"project": self.project}, "max(sequence)")
-			self.sequence = (last or 0) + 1
+			last = frappe.get_all(
+				"Project Phase",
+				filters={"project": self.project},
+				pluck="sequence",
+				order_by="sequence desc",
+				limit=1,
+			)
+			self.sequence = ((last[0] if last else 0) or 0) + 1
 
 	def validate(self):
 		self.validate_from_to_dates("start_date", "end_date")

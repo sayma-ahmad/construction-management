@@ -9,7 +9,7 @@ from frappe.model.document import Document
 from frappe.utils import cint, flt, getdate, nowdate
 from frappe.utils.nestedset import get_descendants_of
 
-from construction_management.construction_management.utils import resolve_erpnext_project
+from construction_management.construction_management.utils import count_permitted, resolve_erpnext_project
 from construction_management.vendors import VENDORS_SUPPLIER_GROUP, is_vendor_type
 
 ALLOWED_STATUSES = ("Open", "In Progress", "On Hold", "Completed", "Cancelled")
@@ -322,13 +322,7 @@ def get_work_order_list(filters=None, search=None, start=0, page_length=20):
 		page_length=page_length,
 	)
 
-	count_rows = frappe.get_list(
-		"Construction Work Order",
-		fields=["count(name) as total"],
-		filters=query_filters,
-		or_filters=or_filters,
-	)
-	total = cint(count_rows[0].total) if count_rows else 0
+	total = count_permitted("Construction Work Order", query_filters, or_filters)
 
 	return {
 		"records": records,

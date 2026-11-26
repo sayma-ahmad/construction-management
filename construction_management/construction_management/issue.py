@@ -7,7 +7,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
-from construction_management.construction_management.utils import resolve_erpnext_project
+from construction_management.construction_management.utils import count_permitted, resolve_erpnext_project
 
 CONSTRUCTION_ISSUE_TYPES = {"Safety", "Quality", "Material", "Equipment", "Design", "Delay", "Other"}
 
@@ -99,13 +99,7 @@ def get_issue_list(filters=None, search=None, start=0, page_length=20):
 	for row in records:
 		row["assigned_to"] = _parse_assignees(row.get("_assign"))
 
-	count_rows = frappe.get_list(
-		"Issue",
-		fields=["count(name) as total"],
-		filters=query_filters,
-		or_filters=or_filters,
-	)
-	total = cint(count_rows[0].total) if count_rows else 0
+	total = count_permitted("Issue", query_filters, or_filters)
 
 	return {
 		"records": records,

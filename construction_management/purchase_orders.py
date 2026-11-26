@@ -4,6 +4,8 @@ from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.utils import add_days, flt, getdate, nowdate
 
+from construction_management.construction_management.utils import count_permitted
+
 
 PO_CUSTOM_FIELDS = {
 	"Purchase Order": [
@@ -307,13 +309,7 @@ def get_purchase_orders(project=None, status=None, supplier=None, search=None, s
 		page_length=page_length,
 	)
 
-	count_rows = frappe.get_list(
-		"Purchase Order",
-		filters=filters,
-		or_filters=or_filters,
-		fields=["count(name) as total"],
-	)
-	total = count_rows[0].total if count_rows else len(orders)
+	total = count_permitted("Purchase Order", filters, or_filters)
 
 	if not orders:
 		return {

@@ -8,7 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt, now_datetime
 
-from construction_management.construction_management.utils import resolve_erpnext_project
+from construction_management.construction_management.utils import count_permitted, resolve_erpnext_project
 
 REVIEWER_ROLES = {"System Manager", "Projects Manager"}
 
@@ -253,13 +253,7 @@ def get_dpr_list(filters=None, search=None, start=0, page_length=20):
 		page_length=page_length,
 	)
 
-	count_rows = frappe.get_list(
-		"Daily Progress Report",
-		fields=["count(name) as total"],
-		filters=query_filters,
-		or_filters=or_filters,
-	)
-	total = cint(count_rows[0].total) if count_rows else 0
+	total = count_permitted("Daily Progress Report", query_filters, or_filters)
 
 	return {
 		"records": records,
