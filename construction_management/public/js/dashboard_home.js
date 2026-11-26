@@ -24,6 +24,11 @@
 		frappe.router.route();
 	}
 
+	// Project Details needs a project, so it is opened from a project row, not from the v16 sidebar.
+	$("<style>")
+		.text('.standard-sidebar-item:has(> a[href$="/construction-project-details"]) { display: none; }')
+		.appendTo("head");
+
 	// Wait until the desk has rendered the current route before switching to the dashboard.
 	$(document).on("page-change", () => setTimeout(redirect_home_to_dashboard, 0));
 })();
