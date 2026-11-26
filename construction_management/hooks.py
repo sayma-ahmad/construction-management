@@ -10,16 +10,14 @@ app_license = "mit"
 
 required_apps = ["erpnext"]
 
-# Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "construction_management",
-# 		"logo": "/assets/construction_management/logo.png",
-# 		"title": "Construction Management",
-# 		"route": "/construction_management",
-# 		"has_permission": "construction_management.api.permission.has_app_permission"
-# 	}
-# ]
+add_to_apps_screen = [
+	{
+		"name": app_name,
+		"logo": "/assets/construction_management/images/construction-logo.svg",
+		"title": app_title,
+		"route": "/app/construction-management",
+	}
+]
 
 # Includes in <head>
 # ------------------
@@ -94,6 +92,7 @@ after_install = [
 	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
 	"construction_management.grn.setup",
 	"construction_management.inventory.setup",
+	"construction_management.construction_management.utils.sync_desktop_icon",
 ]
 after_migrate = [
 	"construction_management.materials.setup",
@@ -104,6 +103,7 @@ after_migrate = [
 	"construction_management.construction_management.utils.ensure_standard_docperms_for_customized_doctypes",
 	"construction_management.grn.setup",
 	"construction_management.inventory.setup",
+	"construction_management.construction_management.utils.sync_desktop_icon",
 ]
 
 # Uninstallation

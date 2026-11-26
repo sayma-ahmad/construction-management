@@ -72,6 +72,15 @@ def ensure_standard_docperms_for_customized_doctypes():
 			frappe.get_doc(custom_perm).insert(ignore_permissions=True)
 
 
+def sync_desktop_icon():
+	"""Create the app's icon on the Frappe v16 desktop when the app is added to an existing site."""
+	try:
+		from frappe.utils.install import create_desktop_icons_for_app
+	except ImportError:
+		return
+	create_desktop_icons_for_app("construction_management")
+
+
 def count_permitted(doctype, filters=None, or_filters=None):
 	"""Count the records the user may read, without SQL function strings (rejected by Frappe v16)."""
 	return len(
