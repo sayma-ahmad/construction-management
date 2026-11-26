@@ -12,6 +12,7 @@ frappe.pages["construction-issues"].on_page_load = function (wrapper) {
 
 	sync_issue_primary_action(page);
 	page.set_secondary_action(__("Refresh"), () => wrapper.issue_list?.fetch());
+	page.add_inner_button(__("Workspace"), () => frappe.set_route("construction-management"));
 
 	frappe.require(CM_ISSUES_PAGE_ASSETS, () => {
 		wrapper.issue_list = new ConstructionIssueList(page);

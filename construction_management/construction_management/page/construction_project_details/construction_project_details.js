@@ -32,6 +32,7 @@ frappe.pages["construction-project-details"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 	page.set_secondary_action(__("Back to Projects"), () => frappe.set_route("construction-projects"));
+	page.add_inner_button(__("Workspace"), () => frappe.set_route("construction-management"));
 
 	wrapper.project_details = new ProjectDetails(page);
 };

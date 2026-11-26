@@ -1541,10 +1541,42 @@ def create_sample_data(company=None, warehouse=None):
 
 @frappe.whitelist(methods=["POST"])
 def load_sample_data():
-	"""Load the sample construction data and sample stock from the dashboard (System Manager only)."""
-	frappe.only_for("System Manager")
-	from construction_management.inventory import create_sample_stock_data
+	"""Queue loading of all sample data from the dashboard (System Manager only).
 
-	result = create_sample_data()
-	create_sample_stock_data()
-	return result["counts"]
+	Loading takes a minute or two, longer than a web request may run, so it runs as a background job
+	and the user is notified when it finishes.
+	"""
+	frappe.only_for("System Manager")
+	frappe.enqueue(
+		"construction_management.demo_data.run_sample_data_job",
+		queue="long",
+		timeout=3600,
+		job_id="cm_load_sample_data",
+		deduplicate=True,
+		user=frappe.session.user,
+	)
+	return {"queued": True}
+
+
+def run_sample_data_job(user=None):
+	from construction_management.inventory import create_sample_stock_data
+	from construction_management.seed_data import create_seed_data
+
+	user = user or frappe.session.user
+	try:
+		create_sample_data()
+		frappe.db.commit()
+		create_sample_stock_data()
+		frappe.db.commit()
+		create_seed_data()
+		frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(title="Construction sample data load failed")
+		frappe.publish_realtime(
+			"cm_sample_data_loaded",
+			{"ok": False, "message": _("Loading sample data failed. See the Error Log for details.")},
+			user=user,
+		)
+		raise
+	frappe.publish_realtime("cm_sample_data_loaded", {"ok": True}, user=user)

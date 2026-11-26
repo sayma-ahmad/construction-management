@@ -14,6 +14,7 @@ frappe.pages["daily-progress-reports"].on_page_load = function (wrapper) {
 		page.set_primary_action(__("New DPR"), () => frappe.new_doc("Daily Progress Report"), "add");
 	}
 	page.set_secondary_action(__("Refresh"), () => wrapper.dpr_list?.fetch());
+	page.add_inner_button(__("Workspace"), () => frappe.set_route("construction-management"));
 
 	frappe.require(CM_DPR_PAGE_ASSETS, () => {
 		wrapper.dpr_list = new DailyProgressReportList(page);

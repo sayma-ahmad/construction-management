@@ -44,15 +44,28 @@ frappe.pages["construction-dashboard"].on_page_show = function (wrapper) {
 
 function load_sample_data(page) {
 	frappe.confirm(
-		__("Load the sample construction projects, purchasing and stock data? Records that already exist are skipped."),
+		__("Load sample data for every page (projects, reports, tasks, issues, work orders, purchasing and stock)? Records that already exist are skipped."),
 		() => {
+			frappe.realtime.off("cm_sample_data_loaded");
+			frappe.realtime.on("cm_sample_data_loaded", (data) => {
+				frappe.realtime.off("cm_sample_data_loaded");
+				if (data && data.ok) {
+					frappe.show_alert({ message: __("Sample data loaded"), indicator: "green" }, 7);
+					load_dashboard(page);
+				} else {
+					frappe.msgprint((data && data.message) || __("Loading sample data failed."));
+				}
+			});
 			frappe.call({
 				method: "construction_management.demo_data.load_sample_data",
-				freeze: true,
-				freeze_message: __("Loading sample data..."),
 				callback: () => {
-					frappe.show_alert({ message: __("Sample data loaded"), indicator: "green" });
-					load_dashboard(page);
+					frappe.show_alert(
+						{
+							message: __("Loading sample data in the background. This takes a few minutes; you will be notified when it is done."),
+							indicator: "blue",
+						},
+						10
+					);
 				},
 			});
 		}

@@ -15,7 +15,7 @@ add_to_apps_screen = [
 		"name": app_name,
 		"logo": "/assets/construction_management/images/construction-logo.svg",
 		"title": app_title,
-		"route": "/app/construction-management",
+		"route": "/app/construction-dashboard",
 	}
 ]
 
@@ -24,7 +24,10 @@ add_to_apps_screen = [
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/construction_management/css/construction_management.css"
-app_include_js = "/assets/construction_management/js/workspace_shortcuts.js"
+app_include_js = [
+	"/assets/construction_management/js/workspace_shortcuts.js",
+	"/assets/construction_management/js/dashboard_home.js",
+]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/construction_management/css/construction_management.css"

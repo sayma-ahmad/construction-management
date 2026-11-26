@@ -21,6 +21,7 @@ frappe.pages["construction-work-orders"].on_page_load = function (wrapper) {
 		);
 	}
 	page.set_secondary_action(__("Refresh"), () => wrapper.work_order_list?.fetch());
+	page.add_inner_button(__("Workspace"), () => frappe.set_route("construction-management"));
 
 	frappe.require(CM_WO_PAGE_ASSETS, () => {
 		wrapper.work_order_list = new ConstructionWorkOrderList(page);

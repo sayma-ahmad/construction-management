@@ -205,7 +205,11 @@ def create_sample_materials(run_setup=True):
 
 def get_sample_hsn_code(item_code):
 	"""Return the sample material's HSN code, creating the GST HSN Code record if the site lacks it."""
-	code, description = SAMPLE_HSN_CODES[item_code]
+	return ensure_hsn_code(*SAMPLE_HSN_CODES[item_code])
+
+
+def ensure_hsn_code(code, description):
+	"""Make sure an India Compliance GST HSN Code record exists for `code` and return the code."""
 	if frappe.db.exists("DocType", "GST HSN Code") and not frappe.db.exists("GST HSN Code", code):
 		frappe.get_doc({"doctype": "GST HSN Code", "hsn_code": code, "description": description}).insert(
 			ignore_permissions=True

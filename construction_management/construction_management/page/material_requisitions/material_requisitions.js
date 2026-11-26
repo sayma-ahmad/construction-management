@@ -12,6 +12,7 @@ frappe.pages["material-requisitions"].on_page_load = function (wrapper) {
 
 	sync_mr_primary_action(page);
 	page.set_secondary_action(__("Refresh"), () => wrapper.mr_list?.fetch());
+	page.add_inner_button(__("Workspace"), () => frappe.set_route("construction-management"));
 
 	frappe.require(CM_MR_PAGE_ASSETS, () => {
 		wrapper.mr_list = new MaterialRequisitionList(page);
