@@ -28,6 +28,9 @@ frappe.pages["construction-dashboard"].on_page_load = function (wrapper) {
 
 	page.set_secondary_action(__("Workspace"), () => frappe.set_route("construction-management"));
 	page.set_primary_action(__("Refresh"), () => load_dashboard(page));
+	if (frappe.user.has_role("System Manager")) {
+		page.add_inner_button(__("Load Sample Data"), () => load_sample_data(page));
+	}
 
 	wrapper.page = page;
 	load_dashboard(page);
@@ -38,6 +41,23 @@ frappe.pages["construction-dashboard"].on_page_show = function (wrapper) {
 		load_dashboard(wrapper.page);
 	}
 };
+
+function load_sample_data(page) {
+	frappe.confirm(
+		__("Load the sample construction projects, purchasing and stock data? Records that already exist are skipped."),
+		() => {
+			frappe.call({
+				method: "construction_management.demo_data.load_sample_data",
+				freeze: true,
+				freeze_message: __("Loading sample data..."),
+				callback: () => {
+					frappe.show_alert({ message: __("Sample data loaded"), indicator: "green" });
+					load_dashboard(page);
+				},
+			});
+		}
+	);
+}
 
 function load_dashboard(page) {
 	if (page._is_loading) return;

@@ -1537,3 +1537,14 @@ def create_sample_data(company=None, warehouse=None):
 			"purchase_invoices": list(pis.values()),
 		},
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+def load_sample_data():
+	"""Load the sample construction data and sample stock from the dashboard (System Manager only)."""
+	frappe.only_for("System Manager")
+	from construction_management.inventory import create_sample_stock_data
+
+	result = create_sample_data()
+	create_sample_stock_data()
+	return result["counts"]
