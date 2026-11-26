@@ -128,6 +128,18 @@ SAMPLE_MATERIALS = [
 	},
 ]
 
+# HSN codes for the sample materials, used when India Compliance makes HSN/SAC Code mandatory on Items.
+SAMPLE_HSN_CODES = {
+	"CM-CEM-001": ("25232910", "Ordinary Portland cement"),
+	"CM-STL-001": ("72142090", "Bars and rods of iron or non-alloy steel, with indentations"),
+	"CM-AGG-001": ("25059000", "Natural sands"),
+	"CM-AGG-002": ("25171010", "Pebbles, gravel and broken stone"),
+	"CM-MAS-001": ("69041000", "Building bricks"),
+	"CM-MAS-002": ("68101190", "Building blocks of cement or concrete"),
+	"CM-PLB-001": ("39172390", "Tubes, pipes and hoses of polymers of vinyl chloride"),
+	"CM-ELE-001": ("85444999", "Other electric conductors"),
+}
+
 
 def ensure_custom_fields():
 	"""Install Item custom fields (schema DDL) when not yet present."""
@@ -179,9 +191,26 @@ def create_sample_materials(run_setup=True):
 			ignore_permissions=True
 		)
 
+	use_hsn = frappe.get_meta("Item").has_field("gst_hsn_code")
 	for material in SAMPLE_MATERIALS:
+		hsn_code = get_sample_hsn_code(material["item_code"]) if use_hsn else None
 		if not frappe.db.exists("Item", material["item_code"]):
-			frappe.get_doc({"doctype": "Item", "is_stock_item": 1, **material}).insert(ignore_permissions=True)
+			item = {"doctype": "Item", "is_stock_item": 1, **material}
+			if hsn_code:
+				item["gst_hsn_code"] = hsn_code
+			frappe.get_doc(item).insert(ignore_permissions=True)
+		elif hsn_code and not frappe.db.get_value("Item", material["item_code"], "gst_hsn_code"):
+			frappe.db.set_value("Item", material["item_code"], "gst_hsn_code", hsn_code)
+
+
+def get_sample_hsn_code(item_code):
+	"""Return the sample material's HSN code, creating the GST HSN Code record if the site lacks it."""
+	code, description = SAMPLE_HSN_CODES[item_code]
+	if frappe.db.exists("DocType", "GST HSN Code") and not frappe.db.exists("GST HSN Code", code):
+		frappe.get_doc({"doctype": "GST HSN Code", "hsn_code": code, "description": description}).insert(
+			ignore_permissions=True
+		)
+	return code
 
 
 def is_material_category(item_group):
