@@ -58,6 +58,11 @@ class ProjectDetails {
 	}
 
 	show(code, tab) {
+		// Opened without a project (e.g. from the sidebar): pick one from the Projects list.
+		if (!code) {
+			frappe.set_route("construction-projects");
+			return;
+		}
 		this.ready
 			.then(() => frappe.call({ method: CM_PROJECT_METHOD, args: { key: code } }))
 			.then((r) => {

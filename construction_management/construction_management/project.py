@@ -64,8 +64,10 @@ def get_construction_projects():
 
 
 @frappe.whitelist()
-def get_construction_project(key):
+def get_construction_project(key=None):
 	"""Return one ERPNext Project, found by its Project Code or its name, with task counts."""
+	if not key:
+		return None
 	matches = frappe.get_list(
 		"Project",
 		or_filters=[["Project", "cm_project_code", "=", key], ["Project", "name", "=", key]],

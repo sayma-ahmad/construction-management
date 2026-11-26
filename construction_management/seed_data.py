@@ -161,8 +161,9 @@ def create_seed_data(company=None):
 	step("Daily Progress Reports", _ensure_dprs, counts, projects, today)
 	tasks_by_project = step("Phases and Tasks", _ensure_phases_and_tasks, counts, projects, today) or {}
 	step("Issues", _ensure_issues, counts, projects, company, today)
-	contractors = step("Vendors", _ensure_vendors, counts) or []
-	step("Work Orders", _ensure_work_orders, counts, projects, tasks_by_project, contractors, today)
+	step("Vendors", _ensure_vendors, counts)
+	# Work orders use every construction vendor on the site, so they load even if new vendors fail.
+	step("Work Orders", _ensure_work_orders, counts, projects, tasks_by_project, _construction_contractors(), today)
 	warehouses = step("Materials and Stock", _ensure_materials_and_stock, counts, company, today)
 	if warehouses:
 		step("Purchasing", _ensure_procurement, counts, company, projects, warehouses, today)
@@ -556,14 +557,14 @@ def _ensure_issues(counts, projects, company, today):
 # ---------------------------------------------------------------- vendors
 
 EXTRA_VENDORS = [
-	("Sahyadri Civil Works", "Subcontractor", "Civil Works", "Suresh", "Patil", "Pune", "Maharashtra"),
-	("Volt Line Electrical Contractors", "Subcontractor", "Electrical", "Imran", "Shaikh", "Mumbai", "Maharashtra"),
-	("AquaFlow Plumbing Contractors", "Subcontractor", "Plumbing", "Joseph", "Mathew", "Kochi", "Kerala"),
-	("Brickwell Masonry Contractors", "Subcontractor", "Masonry", "Ramesh", "Yadav", "Lucknow", "Uttar Pradesh"),
-	("TerraMove Earthmovers", "Equipment Supplier", "Construction Equipment", "Harpreet", "Singh", "Chandigarh", "Punjab"),
-	("LiftPro Crane Services", "Equipment Supplier", "Construction Equipment", "Kiran", "Rao", "Hyderabad", "Telangana"),
-	("SteelCore Fabricators", "Material Supplier", "Steel", "Mahesh", "Gupta", "Ahmedabad", "Gujarat"),
-	("BuildSafe Site Services", "Service Provider", "Civil Works", "Neha", "Kulkarni", "Bengaluru", "Karnataka"),
+	("Sahyadri Civil Works", "Subcontractor", "Civil Works", "Suresh", "Patil", "Pune", "Maharashtra", "411001"),
+	("Volt Line Electrical Contractors", "Subcontractor", "Electrical", "Imran", "Shaikh", "Mumbai", "Maharashtra", "400001"),
+	("AquaFlow Plumbing Contractors", "Subcontractor", "Plumbing", "Joseph", "Mathew", "Kochi", "Kerala", "682001"),
+	("Brickwell Masonry Contractors", "Subcontractor", "Masonry", "Ramesh", "Yadav", "Lucknow", "Uttar Pradesh", "226001"),
+	("TerraMove Earthmovers", "Equipment Supplier", "Construction Equipment", "Harpreet", "Singh", "Chandigarh", "Chandigarh", "160017"),
+	("LiftPro Crane Services", "Equipment Supplier", "Construction Equipment", "Kiran", "Rao", "Hyderabad", "Telangana", "500001"),
+	("SteelCore Fabricators", "Material Supplier", "Steel", "Mahesh", "Gupta", "Ahmedabad", "Gujarat", "380001"),
+	("BuildSafe Site Services", "Service Provider", "Civil Works", "Neha", "Kulkarni", "Bengaluru", "Karnataka", "560001"),
 ]
 ON_HOLD_VENDOR = "BuildSafe Site Services"
 DISABLED_VENDOR = "SteelCore Fabricators"
@@ -571,7 +572,7 @@ DISABLED_VENDOR = "SteelCore Fabricators"
 
 def _ensure_vendors(counts):
 	country = frappe.db.get_default("country") or "India"
-	for i, (name, group, spec, first, last, city, state) in enumerate(EXTRA_VENDORS):
+	for i, (name, group, spec, first, last, city, state, pincode) in enumerate(EXTRA_VENDORS):
 		exists = frappe.db.exists("Supplier", {"supplier_name": name})
 		if not exists:
 			slug = name.split()[0].lower()
@@ -585,12 +586,12 @@ def _ensure_vendors(counts):
 					"country": country,
 					"first_name": first,
 					"last_name": last,
-					"mobile_no": f"+91 98{i:03d} {40000 + i * 137:05d}",
+					"mobile_no": f"+91 98{i + 10:03d}{40000 + i * 137:05d}",
 					"email_id": f"contact@{slug}.example.com",
 					"address_line1": f"{12 + i} Industrial Estate Road",
 					"city": city,
 					"state": state,
-					"pincode": str(400001 + i * 1111),
+					"pincode": pincode,
 				}
 			)
 			# One vendor on hold and one disabled, so the Vendors status filter has data.
@@ -601,6 +602,10 @@ def _ensure_vendors(counts):
 			doc.insert(ignore_permissions=True)
 		_count(counts, "Supplier", created=not exists)
 
+
+
+def _construction_contractors():
+	"""Enabled construction vendors that can be assigned to Work Orders."""
 	groups = frappe.get_all("Supplier Group", {"parent_supplier_group": VENDORS_SUPPLIER_GROUP}, pluck="name")
 	return frappe.get_all(
 		"Supplier",
