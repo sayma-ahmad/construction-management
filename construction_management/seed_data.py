@@ -143,16 +143,31 @@ def create_seed_data(company=None):
 	company = _resolve_company(company)
 	today = getdate(nowdate())
 	counts = {}
-	clients = _ensure_clients(counts)
-	projects = _ensure_projects(counts, company, clients, today)
-	_ensure_dprs(counts, projects, today)
-	tasks_by_project = _ensure_phases_and_tasks(counts, projects, today)
-	_ensure_issues(counts, projects, company, today)
-	contractors = _ensure_vendors(counts)
-	_ensure_work_orders(counts, projects, tasks_by_project, contractors, today)
-	warehouses = _ensure_materials_and_stock(counts, company, today)
-	_ensure_procurement(counts, company, projects, warehouses, today)
-	_ensure_stock_transfers(counts, company, projects, warehouses)
+	failed = []
+
+	def step(label, fn, *args):
+		# A failing section is rolled back and logged; the remaining sections still load.
+		savepoint = "cm_seed_step"
+		frappe.db.savepoint(savepoint)
+		try:
+			return fn(*args)
+		except Exception:
+			frappe.db.rollback(save_point=savepoint)
+			frappe.log_error(title=f"Construction sample data: {label} failed")
+			failed.append(label)
+
+	clients = step("Clients", _ensure_clients, counts) or []
+	projects = step("Projects", _ensure_projects, counts, company, clients, today) or []
+	step("Daily Progress Reports", _ensure_dprs, counts, projects, today)
+	tasks_by_project = step("Phases and Tasks", _ensure_phases_and_tasks, counts, projects, today) or {}
+	step("Issues", _ensure_issues, counts, projects, company, today)
+	contractors = step("Vendors", _ensure_vendors, counts) or []
+	step("Work Orders", _ensure_work_orders, counts, projects, tasks_by_project, contractors, today)
+	warehouses = step("Materials and Stock", _ensure_materials_and_stock, counts, company, today)
+	if warehouses:
+		step("Purchasing", _ensure_procurement, counts, company, projects, warehouses, today)
+		step("Stock Transfers", _ensure_stock_transfers, counts, company, projects, warehouses)
+	counts["failed_sections"] = failed
 	return counts
 
 

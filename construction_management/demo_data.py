@@ -1563,20 +1563,29 @@ def run_sample_data_job(user=None):
 	from construction_management.seed_data import create_seed_data
 
 	user = user or frappe.session.user
+	failed = []
+	for label, fn in (
+		(_("Base sample data"), create_sample_data),
+		(_("Sample stock"), create_sample_stock_data),
+	):
+		try:
+			fn()
+			frappe.db.commit()
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(title=f"Construction sample data: {label} failed")
+			failed.append(label)
+
 	try:
-		create_sample_data()
-		frappe.db.commit()
-		create_sample_stock_data()
-		frappe.db.commit()
-		create_seed_data()
+		failed.extend(create_seed_data().get("failed_sections", []))
 		frappe.db.commit()
 	except Exception:
 		frappe.db.rollback()
-		frappe.log_error(title="Construction sample data load failed")
-		frappe.publish_realtime(
-			"cm_sample_data_loaded",
-			{"ok": False, "message": _("Loading sample data failed. See the Error Log for details.")},
-			user=user,
-		)
-		raise
-	frappe.publish_realtime("cm_sample_data_loaded", {"ok": True}, user=user)
+		frappe.log_error(title="Construction sample data: seed data failed")
+		failed.append(_("Seed data"))
+
+	if failed:
+		message = _("Sample data loaded, except: {0}. See the Error Log for details.").format(", ".join(failed))
+	else:
+		message = None
+	frappe.publish_realtime("cm_sample_data_loaded", {"ok": not failed, "message": message}, user=user)

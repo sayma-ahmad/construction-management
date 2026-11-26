@@ -54,6 +54,7 @@ function load_sample_data(page) {
 					load_dashboard(page);
 				} else {
 					frappe.msgprint((data && data.message) || __("Loading sample data failed."));
+					load_dashboard(page);
 				}
 			});
 			frappe.call({
